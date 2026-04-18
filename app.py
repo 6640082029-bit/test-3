@@ -398,7 +398,7 @@ with st.sidebar:
                          help="Safe-Haven Stress · affects 6M & 1Y outlook")
     sl_oil   = st.slider("🛢 Brent Crude (USD)",  30,  200,    85,  1,
                          help="Flavor: Energy stress · boosts longer-horizon risk")
-    sl_usd   = st.slider("💵 USD Index",           85,  115,   104,  0.5,
+    sl_usd   = st.slider("💵 USD Index",           85.0, 115.0, 104.0,  0.5,
                          help="Flavor: Dollar strength · global liquidity signal")
 
     st.markdown("<hr style='border-color:#2e2e2e;margin:20px 0'>", unsafe_allow_html=True)
