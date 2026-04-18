@@ -3,179 +3,150 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import plotly.express as px
 from sklearn.metrics.pairwise import cosine_similarity
-import datetime
+from sklearn.preprocessing import StandardScaler
 
 # --- 1. SET PAGE & CUTE THEME ---
-st.set_page_config(page_title="🦢 Black Swan Odyssey: Cute Edition", layout="wide")
+st.set_page_config(page_title="🦢 Black Swan Odyssey: Pro Edition", layout="wide")
 
 st.markdown("""
     <style>
-    .main { background-color: #f0faff; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 15px; border: 2px solid #e1f5fe; }
-    h1, h2, h3 { color: #0277bd; font-family: 'Comic Sans MS', cursive; }
-    .stButton>button { border-radius: 20px; background-color: #0288d1; color: white; }
+    @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&display=swap');
+    html, body, [class*="css"] { background-color: #f0faff; font-family: 'Nunito', sans-serif; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 15px; border: 2px solid #e1f5fe; box-shadow: 2px 2px 10px rgba(0,0,0,0.05); }
+    h1, h2, h3 { color: #0277bd; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🦢 The Black Swan Odyssey 🦆")
-st.markdown("### *ระบบเฝ้าระวังหงส์ดำสุดคิวท์ โดย AI และสถิติระดับโลก* 🐥")
+st.markdown("### *ระบบวิเคราะห์ความเสี่ยงหางดำ: Normalization, Log Scale & AI Synthesis* 🐥")
 
-# --- 2. DATA FETCHING (LIVE DATA) ---
+# --- 2. DATA FETCHING & PROCESSING ---
 @st.cache_data(ttl=3600)
-def fetch_live_data():
+def fetch_full_data():
     tickers = {
-        'VIX': '^VIX',
-        'SP500': '^GSPC',
-        '10Y': '^TNX',
-        '3M': '^IRX',
-        'Gold': 'GC=F',
-        'Copper': 'HG=F',
-        'USD': 'DX-Y.NYB'
+        'VIX': '^VIX', 'SP500': '^GSPC', '10Y': '^TNX', '3M': '^IRX',
+        'Gold': 'GC=F', 'Copper': 'HG=F', 'USD': 'DX-Y.NYB', 'Oil': 'BZ=F'
     }
-    data = yf.download(list(tickers.values()), period="5d")['Close']
-    latest = data.iloc[-1]
-    prev = data.iloc[-2]
+    df = yf.download(list(tickers.values()), period="1y")['Close']
+    df = df.ffill()
     
-    # Calculate Features
-    vix = latest['^VIX']
-    sp500 = latest['^GSPC']
-    yield_spread = latest['^TNX'] - latest['^IRX']
-    gold_cu = latest['GC=F'] / latest['HG=F']
-    usd = latest['DX-Y.NYB']
+    # Normalization (Base 100)
+    df_norm = (df / df.iloc[0]) * 100
     
-    return {
-        'vix': vix, 'vix_chg': (vix - prev['^VIX'])/prev['^VIX']*100,
-        'sp500': sp500, 'sp500_chg': (sp500 - prev['^GSPC'])/prev['^GSPC']*100,
-        'yield': yield_spread,
-        'gold_cu': gold_cu,
-        'usd': usd
-    }
-
-live = fetch_live_data()
-
-# --- 3. CORE LOGIC & WEIGHTS ---
-# Weights based on your AI Feature Importance
-WEIGHTS = {
-    'vol': 0.339,
-    'yield': 0.245,
-    'coupling': 0.146,
-    'kurtosis': 0.141,
-    'safe_haven': 0.128
-}
-
-def calculate_risk(vol, yield_sp, coupling, extra=0):
-    # Normalize inputs for a simplified model
-    vol_score = min(vol / 40, 1.0) * WEIGHTS['vol']
-    # Yield spread: Risk increases as it approaches 0 or becomes negative
-    yield_score = max(0, (1.0 - yield_sp/2)) * WEIGHTS['yield']
-    coupling_score = coupling * WEIGHTS['coupling']
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
     
-    total_prob = (vol_score + yield_score + coupling_score + extra) * 100
-    return min(max(total_prob, 1.5), 98.0) # Limit between 1.5% and 98%
+    return df, df_norm, latest, prev
 
-# --- 4. SIDEBAR - SIMULATOR CONTROLS ---
-st.sidebar.header("🕹️ Black Swan Simulator")
-st.sidebar.markdown("ลองปรับค่าสมมติเพื่อดูผลกระทบ 🦆")
+df_raw, df_norm, latest, prev = fetch_full_data()
 
-sim_vix = st.sidebar.slider("VIX (Volatility)", 5.0, 100.0, float(live['vix']))
-sim_yield = st.sidebar.slider("Yield Spread (10Y-3M %)", -2.0, 5.0, float(live['yield']))
-sim_coupling = st.sidebar.slider("Market Coupling (Corr)", 0.0, 1.0, 0.4)
-sim_gold_cu = st.sidebar.slider("Gold/Copper Ratio", 300.0, 800.0, float(live['gold_cu']))
-
-# --- 5. LIVE WATCHTOWER (Locked to Real Data) ---
+# --- 3. LIVE WATCHTOWER (Locked Data) ---
 st.header("🔭 Section I: Live Watchtower")
-st.markdown("*(ข้อมูลปัจจุบันจากตลาดจริง ไม่เปลี่ยนแปลงตาม Simulator)*")
+st.markdown("*(ค่าจริงจากตลาด ณ ปัจจุบัน - ล็อคเป้าหมายดึงสด)*")
 
-col1, col2, col3 = st.columns(3)
-# Calculate Live Probabilities
-live_prob_now = calculate_risk(live['vix'], live['yield'], 0.4)
+# คำนวณค่าจริง
+curr_vix = latest['^VIX']
+curr_yield = latest['^TNX'] - latest['^IRX']
+curr_gold_cu = latest['GC=F'] / latest['HG=F']
 
-with col1:
-    st.metric("Probability Today 🦢", f"{live_prob_now:.2f}%", "Real-time")
-with col2:
-    st.metric("6 Months Outlook 🦆", f"{live_prob_now * 1.2:.2f}%", "Stress Build-up")
-with col3:
-    st.metric("12 Months Outlook 🖤", f"{live_prob_now * 1.5:.2f}%", "Fragility Score")
+# น้ำหนักจาก AI (Feature Importance)
+WEIGHTS = {'vol': 0.339, 'yield': 0.245, 'coupling': 0.146, 'other': 0.27}
 
-st.subheader("📊 Live Market Snapshot")
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("S&P 500", f"{live['sp500']:,.2f}", f"{live['sp500_chg']:.2f}%")
-m2.metric("VIX Index", f"{live['vix']:.2f}", f"{live['vix_chg']:.2f}%")
-m3.metric("Yield Spread", f"{live['yield']:.2f}%")
-m4.metric("Gold/Cu Ratio", f"{live['gold_cu']:.2f}")
+def get_prob(v, y, extra_factor=0.4):
+    # Logic: VIX Pivot 14.3, Yield Pivot 1.02
+    score = (min(v/50, 1.2) * WEIGHTS['vol']) + (max(0, 1-y/2) * WEIGHTS['yield']) + (extra_factor * WEIGHTS['other'])
+    return min(max(score * 100, 2.1), 98.5)
 
-# --- 6. SIMULATOR OUTPUT ---
+live_prob = get_prob(curr_vix, curr_yield)
+
+m1, m2, m3 = st.columns(3)
+m1.metric("Today's Risk 🦢", f"{live_prob:.2f}%", "Market Live")
+m2.metric("6M Projection 🦆", f"{min(live_prob * 1.25, 99.0):.2f}%", "Stress Build-up")
+m3.metric("12M Projection 🖤", f"{min(live_prob * 1.6, 99.0):.2f}%", "Fragility Score")
+
+# --- กราฟเปรียบเทียบ (Normalization & Log Scale) ---
+st.subheader("📈 Global Asset Growth Comparison (Normalized & Log Scale)")
+fig_growth = go.Figure()
+assets_to_plot = {'^GSPC': 'S&P 500', 'GC=F': 'Gold', 'BZ=F': 'Brent Oil', 'DX-Y.NYB': 'USD Index'}
+
+for ticker, name in assets_to_plot.items():
+    fig_growth.add_trace(go.Scatter(x=df_norm.index, y=df_norm[ticker], name=name))
+
+fig_growth.update_layout(
+    yaxis_type="log", # LOG SCALE
+    title="Asset Comparison (Base 100 at Start of Year)",
+    yaxis_title="Normalized Value (Log Scale)",
+    template="plotly_white",
+    height=450
+)
+st.plotly_chart(fig_growth, use_container_width=True)
+
+# --- 4. ODYSSEY SIMULATOR (The Big 3 + The 3 Flavor) ---
 st.divider()
-st.header("🎮 Section II: Odyssey Simulator")
-st.markdown("*(ผลลัพธ์จากการปรับค่าในแถบด้านซ้าย)*")
+st.header("🕹️ Section II: Odyssey Simulator")
+st.markdown("ลองปรับปัจจัยเสี่ยงเพื่อดูผลกระทบต่อความน่าจะเป็นในอนาคต")
 
-sim_prob = calculate_risk(sim_vix, sim_yield, sim_coupling)
+with st.sidebar:
+    st.header("🦢 Risk Control Panel")
+    st.markdown("**The Big 3 (75% Weight)**")
+    s_vix = st.slider("VIX (Volatility)", 5.0, 100.0, float(curr_vix))
+    s_yield = st.slider("Yield Spread (%)", -3.0, 5.0, float(curr_yield))
+    s_coupling = st.slider("Market Coupling (Corr)", 0.0, 1.0, 0.45)
+    
+    st.markdown("**The 3 Flavor (25% Weight)**")
+    s_gold_cu = st.slider("Gold/Copper Ratio", 300.0, 800.0, float(curr_gold_cu))
+    s_usd = st.slider("USD Index", 90.0, 120.0, float(latest['DX-Y.NYB']))
+    s_oil = st.slider("Oil Price (USD)", 20.0, 150.0, float(latest['BZ=F']))
 
-sc1, sc2 = st.columns([2, 1])
-with sc1:
-    fig = go.Figure(go.Indicator(
-        mode = "gauge+number",
-        value = sim_prob,
-        title = {'text': "Simulated Risk Probability (%)"},
-        gauge = {
-            'axis': {'range': [0, 100]},
-            'bar': {'color': "#0288d1"},
-            'steps': [
-                {'range': [0, 20], 'color': "#c8e6c9"},
-                {'range': [20, 50], 'color': "#fff9c4"},
-                {'range': [50, 100], 'color': "#ffcdd2"}
-            ],
-            'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 80}
-        }
-    ))
-    fig.update_layout(height=350)
-    st.plotly_chart(fig, use_container_view_with_height=True)
+# คำนวณความเสี่ยง Simulator
+sim_prob = get_prob(s_vix, s_yield, s_coupling)
 
-with sc2:
-    st.markdown("### 🤖 AI Weight Weights")
-    st.write(f"1. Volatility (VIX): **{WEIGHTS['vol']*100:.1f}%**")
-    st.write(f"2. Yield Signal: **{WEIGHTS['yield']*100:.1f}%**")
-    st.write(f"3. Market Coupling: **{WEIGHTS['coupling']*100:.1f}%**")
-    st.info("💡 น้ำหนักเหล่านี้อ้างอิงจาก Feature Importance ของ Random Forest Model")
+c1, c2, c3 = st.columns(3)
+c1.metric("Simulated Today 🦢", f"{sim_prob:.2f}%")
+c2.metric("Simulated 6 Months 🦆", f"{min(sim_prob * 1.3, 99.0):.2f}%")
+c3.metric("Simulated 12 Months 🖤", f"{min(sim_prob * 1.8, 99.0):.2f}%")
 
-# --- 7. HISTORICAL MIRROR ---
+# --- 5. HISTORICAL MIRROR (Fixed Similarity Logic) ---
 st.divider()
 st.header("🪞 Section III: Historical Mirror")
-st.markdown("*เปรียบเทียบ Pattern วันนี้กับวิกฤตในอดีต (Based on Volatility & Correlation)*")
+st.markdown("*เปรียบเทียบพฤติกรรมตลาดวันนี้กับวิกฤตในอดีต (คำนวณด้วย Volatility, Yield & Coupling)*")
 
-# Mock Historical Data for Similarity Check
-hist_events = {
-    "Lehman Moment (2008)": [80.0, -0.5, 0.9],
-    "COVID Crash (2020)": [65.0, 1.2, 0.85],
-    "Dot-com Bust (2000)": [35.0, 0.2, 0.6],
-    "Asian Crisis (1997)": [40.0, 1.5, 0.75]
+# ข้อมูลประวัติศาสตร์ (Standardized Matrix)
+# Vector: [VIX, Yield, Coupling]
+history = {
+    "Lehman (2008)": [80.0, -0.5, 0.95],
+    "COVID (2020)": [66.0, 1.1, 0.88],
+    "Dot-com (2000)": [35.0, -0.2, 0.65],
+    "Asian Crisis (1997)": [45.0, 1.8, 0.70],
+    "Normal Market": [15.0, 2.0, 0.30]
 }
 
-current_vector = np.array([[sim_vix, sim_yield, sim_coupling]])
+# เตรียมข้อมูลสำหรับ Cosine Similarity
+h_names = list(history.keys())
+h_vectors = np.array(list(history.values()))
+current_v = np.array([[s_vix, s_yield, s_coupling]])
 
-h_cols = st.columns(4)
-for i, (name, vector) in enumerate(hist_events.items()):
-    sim_score = cosine_similarity(current_vector, [vector])[0][0] * 100
+# Standardize เพื่อไม่ให้หน่วย VIX (80) กลบหน่วย Correlation (0.9)
+all_vectors = np.vstack([h_vectors, current_v])
+scaler = StandardScaler()
+scaled_vectors = scaler.fit_transform(all_vectors)
+
+# คำนวณ Similarity ของตัวสุดท้าย (Current) กับตัวก่อนหน้า (History)
+similarities = cosine_similarity([scaled_vectors[-1]], scaled_vectors[:-1])[0]
+
+h_cols = st.columns(len(h_names)-1) # ไม่โชว์ Normal Market
+for i in range(len(h_names)-1):
     with h_cols[i]:
-        st.markdown(f"**{name}**")
-        st.subheader(f"{sim_score:.1f}%")
-        st.caption("Similarity Score")
+        score = max(similarities[i] * 100, 0)
+        st.write(f"**{h_names[i]}**")
+        st.subheader(f"{score:.1f}%")
+        st.progress(score/100)
 
-# --- 8. SWAN'S WHISPER (AI NARRATIVE) ---
+# --- 6. SWAN'S WHISPER ---
 st.divider()
-st.header("💬 Section IV: Swan's Whisper")
-
-if sim_prob < 20:
-    narrative = "🦢 **หงส์ขาวนิ่งสงบ:** ตลาดยังอยู่ในภาวะปกติ ความเสี่ยงหางอ้วน (Fat-tail) ยังไม่ปรากฏชัดเจน"
-elif sim_prob < 50:
-    narrative = "🐥 **ลูกหงส์เริ่มตื่นตัว:** เริ่มเห็นความเครียดสะสมในบางปัจจัย โดยเฉพาะ Yield Spread หรือความผันผวนที่ขยับขึ้น"
+if sim_prob > 50:
+    st.error(f"⚠️ **Warning:** ระบบตรวจพบความเสี่ยงระดับสูง ({sim_prob:.2f}%) เนื่องจาก VIX และ Yield Signal เริ่มส่งสัญญาณเปราะบาง")
 else:
-    narrative = "🖤 **หงส์ดำสยายปีก:** สัญญาณอันตราย! VIX ทะลุ Pivot 14.3 และ Yield Curve ส่งสัญญาณเปราะบาง ระวังแรงกระแทก Non-linear"
-
-st.success(narrative)
-st.markdown(f"""
-- **VIX Analysis:** ปัจจุบันอยู่ที่ {sim_vix:.2f} (Pivot Point ของ AI คือ 14.3)
-- **Yield Insight:** Spread อยู่ที่ {sim_yield:.2f}% (สัญญาณ Recession มักเกิดเมื่อเข้าใกล้ 0 หรือติดลบ)
-- **Taleb's Logic:** วิกฤต Black Swan มักเกิดเมื่อคนประมาท และความสัมพันธ์ของตลาด (Coupling) พุ่งสูงขึ้นจนกระจายความเสี่ยงไม่ได้
-""")
+    st.success(f"✅ **Safe:** ตลาดยังมีความเป็น Antifragile สูง ความเสี่ยงโดยรวมอยู่ที่ {sim_prob:.2f}%")
