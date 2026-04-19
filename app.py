@@ -394,9 +394,48 @@ with sc2:
     sm2.metric("Sim 3M", f"{p_sim_3m:.2f}%", delta=f"{p_sim_3m-p_real_3m:+.2f}%", delta_color="inverse")
     sm3.metric("Sim 6M", f"{p_sim_6m:.2f}%", delta=f"{p_sim_6m-p_real_6m:+.2f}%", delta_color="inverse")
     
-    fig_path = go.Figure(go.Scatter(x=["Today", "3M", "6M"], y=[p_sim_today, p_sim_3m, p_sim_6m], 
-                                   fill='tozeroy', line=dict(color=color_sim if p_sim_today < 15 else "white", width=4)))
-    fig_path.update_layout(height=250, margin=dict(t=20, b=0, l=10, r=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-    st.plotly_chart(fig_path, use_container_width=True)
+    # --- 1. เตรียมข้อมูลสำหรับ Heatmap ---
+# สร้าง Matrix จำลองความเสี่ยงรอบๆ ค่าที่คุณปรับ Slider
+vol_range = np.linspace(max(0.05, s_vol - 0.2), min(0.9, s_vol + 0.2), 10)
+yield_range = np.linspace(s_yield - 1.0, s_yield + 1.0, 10)
+z_prob = []
+
+for y in yield_range:
+    row = []
+    for v in vol_range:
+        # คำนวณความเสี่ยงในแต่ละจุดของ Matrix
+        s = get_stress_score(v, y, s_coupling, s_kurt) * chaos_mult
+        row.append(estimate_black_swan_mc(s))
+    z_prob.append(row)
+
+# --- 2. สร้าง Visual Heatmap ด้วย Plotly ---
+fig_heat = go.Figure(data=go.Heatmap(
+    z=z_prob,
+    x=np.round(vol_range, 2),
+    y=np.round(yield_range, 2),
+    colorscale='RdYlGn_r', # เขียวไปแดง
+    showscale=True,
+    colorbar=dict(title="Risk %")
+))
+
+# จุดตำแหน่งปัจจุบัน (Current Selected State)
+fig_heat.add_trace(go.Scatter(
+    x=[s_vol], y=[s_yield],
+    mode='markers+text',
+    marker=dict(color='white', size=15, symbol='star', line=dict(color='black', width=2)),
+    text=["YOU ARE HERE"],
+    textposition="top center",
+    name="Current State"
+))
+
+fig_heat.update_layout(
+    title="Risk Sensitivity Landscape (Volatility vs Yield Spread)",
+    xaxis_title="Volatility (Panic Level)",
+    yaxis_title="Yield Spread (Economic Health)",
+    height=400,
+    margin=dict(t=50, b=10, l=10, r=10)
+)
+
+st.plotly_chart(fig_heat, use_container_width=True)
 
 st.markdown("</div>", unsafe_allow_html=True)
