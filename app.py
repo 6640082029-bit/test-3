@@ -110,5 +110,146 @@ if df_raw is not None:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- 6. SIMULATOR & HISTORICAL MIRROR ---
-    # (ส่วนนี้ยังคงเดิมตาม Logic การคำนวณความเสี่ยงที่คุณต้องการ)
+   import streamlit as st
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import pandas_datareader.data as web
+import plotly.graph_objects as go
+from sklearn.metrics.pairwise import cosine_similarity
+import datetime
+
+# --- 1. CONFIG & CUTE THEME ---
+st.set_page_config(page_title="Swan Predictor: Systemic Risk", layout="wide")
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;600&display=swap');
+    html, body, [data-testid="stAppViewContainer"] { background-color: #E3F2FD !important; font-family: 'Anuphan', sans-serif; }
+    .stMetric { background-color: #ffffff; padding: 20px; border-radius: 15px; border: 1px solid #BBDEFB; box-shadow: 0px 4px 10px rgba(0,0,0,0.05); }
+    h1, h2, h3 { color: #01579B; font-family: 'Anuphan', sans-serif; }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.title("🦢 Black Swan Predictor 🖤")
+st.markdown("### *Systemic Fragility Intelligence: Looking into the Unknown*")
+
+# --- 2. DATA FETCHING (Since 1975) ---
+@st.cache_data(ttl=3600)
+def fetch_and_analyze_fragility():
+    tickers = {
+        "NSE_India": "^NSEI", "NYSE": "^NYA", "SSE": "000001.SS",
+        "JPX": "^N225", "Euronext": "^N100", "LSE": "^FTSE",
+        "VIX": "^VIX", "Gold": "GC=F", "Crude_Oil": "BZ=F",
+        "Copper": "HG=F", "USD_Index": "DX-Y.NYB", "SP500": "^GSPC"
+    }
+    
+    # 2.1 Fetch from Yahoo Finance
+    df_yf = yf.download(list(tickers.values()), start="1975-01-01")['Close']
+    df_yf = df_yf.ffill().bfill().rename(columns={v: k for k, v in tickers.items()})
+    df_yf['Gold_Copper_Ratio'] = df_yf['Gold'] / df_yf['Copper']
+
+    # 2.2 Fetch from FRED (Macro Data)
+    try:
+        df_macro = web.DataReader(['T10Y2Y', 'FEDFUNDS'], 'fred', "1975-01-01")
+        df_macro.columns = ['Yield_Curve_Spread', 'FED_Rate']
+    except:
+        df_macro = pd.DataFrame(index=df_yf.index) # Fallback
+
+    df = pd.concat([df_yf, df_macro], axis=1).ffill()
+    
+    # 2.3 Calculate 4 Pillars of Fragility
+    fragility_df = pd.DataFrame(index=df.index)
+    markets = ['NYSE', 'SP500', 'Euronext', 'LSE', 'JPX', 'SSE', 'NSE_India']
+    returns = df[markets].pct_change()
+
+    # Pillar 1: Global Kurtosis (Fat-Tail)
+    fragility_df['Kurtosis'] = returns.rolling(252).kurt().mean(axis=1)
+    # Pillar 2: Global Volatility
+    fragility_df['Volatility'] = returns.rolling(252).std().mean(axis=1) * np.sqrt(252)
+    # Pillar 3: Network Coupling (60-day corr)
+    fragility_df['Coupling'] = returns.rolling(60).corr().groupby(level=0).apply(
+        lambda x: x.values[np.triu_indices_from(x.values, k=1)].mean()
+    )
+    # Pillar 4: Macro Signals
+    fragility_df['Yield_Signal'] = df['Yield_Curve_Spread']
+    fragility_df['Safe_Haven'] = df['Gold_Copper_Ratio']
+
+    return df, fragility_df.dropna()
+
+df_input, df_fragility = fetch_and_analyze_fragility()
+
+# --- 3. BLACK SWAN PREDICTION LOGIC ---
+def predict_risk(current_data):
+    # ตรรกะการให้คะแนนความเสี่ยง (0-100)
+    # 1. Kurtosis > 3 คือเริ่มอันตราย
+    k_score = np.clip((current_data['Kurtosis'] / 10), 0, 1) * 35 
+    # 2. Volatility > 20% (0.2)
+    v_score = np.clip((current_data['Volatility'] / 0.4), 0, 1) * 25
+    # 3. Coupling > 0.7 คือไม่มีที่หนี
+    c_score = np.clip((current_data['Coupling'] / 0.8), 0, 1) * 25
+    # 4. Macro (Yield Inversion & Safe Haven)
+    m_score = (15 if current_data['Yield_Signal'] < 0 else 0) + (current_data['Safe_Haven'] / 800 * 10)
+    
+    total = k_score + v_score + c_score + m_score
+    return min(max(total, 1.5), 99.5)
+
+latest_fragility = df_fragility.iloc[-1]
+risk_today = predict_risk(latest_fragility)
+
+# พยากรณ์ล่วงหน้า (ใช้ความเร่งหรือ Acceleration ของ Fragility)
+velocity = (df_fragility.iloc[-1] - df_fragility.iloc[-22]).mean() # 1 month trend
+risk_3m = min(max(risk_today + (velocity * 3), 1.5), 99.0)
+risk_6m = min(max(risk_today + (velocity * 6), 1.5), 99.0)
+
+# --- 4. DISPLAY SECTION ---
+st.header("🔮 Black Swan Risk Horizon")
+c1, c2, c3 = st.columns(3)
+
+with c1:
+    st.metric("Today's Fragility 🦢", f"{risk_today:.2f}%", delta="Current Status", delta_color="inverse")
+with c2:
+    st.metric("3-Month Predictor 🦆", f"{risk_3m:.2f}%", delta=f"{risk_3m-risk_today:.1f}% vs Today")
+with c3:
+    st.metric("6-Month Predictor 🖤", f"{risk_6m:.2f}%", delta=f"{risk_6m-risk_today:.1f}% vs Today")
+
+# --- 5. THE 4 PILLARS VISUALIZATION ---
+st.divider()
+st.subheader("🕵️ The 4 Pillars of Systemic Fragility")
+p1, p2, p3, p4 = st.columns(4)
+
+p1.metric("Kurtosis (Fat-Tail)", f"{latest_fragility['Kurtosis']:.2f}")
+p2.metric("Volatility (Avg)", f"{latest_fragility['Volatility']*100:.1f}%")
+p3.metric("Coupling (Corr)", f"{latest_fragility['Coupling']:.2f}")
+p4.metric("Yield Spread", f"{latest_fragility['Yield_Signal']:.2f}")
+
+# --- 6. HISTORICAL FRAGILITY CHART ---
+st.subheader("📈 Historical Systemic Fragility Index")
+fig = go.Figure()
+# คำนวณ Index รวมเพื่อพล็อตกราฟ
+df_fragility['Fragility_Index'] = df_fragility.apply(predict_risk, axis=1)
+
+fig.add_trace(go.Scatter(x=df_fragility.index, y=df_fragility['Fragility_Index'], 
+                         name="Systemic Risk Score", line=dict(color='#01579B', width=2)))
+
+# เพิ่ม Highlight ช่วงวิกฤตสำคัญ
+crises = {
+    '1987-10-19': 'Black Monday',
+    '2008-09-15': 'Lehman Crisis',
+    '2020-03-15': 'COVID-19'
+}
+for date, name in crises.items():
+    if pd.to_datetime(date) in df_fragility.index:
+        fig.add_annotation(x=date, y=df_fragility.loc[date, 'Fragility_Index'], text=name, showarrow=True)
+
+fig.update_layout(template="plotly_white", height=500, yaxis_title="Risk Score (0-100)", 
+                  paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='white')
+st.plotly_chart(fig, use_container_width=True)
+
+# --- 7. AI INTERPRETATION ---
+st.divider()
+if risk_today > 60:
+    st.error("🚨 **Systemic Alert:** ความเปราะบางของระบบสูงเกินเกณฑ์ ตลาดมีความสัมพันธ์กันสูง (Coupling) และเกิด Fat-Tail Risk ชัดเจน")
+elif risk_today > 40:
+    st.warning("⚠️ **Fragility Warning:** ระบบเริ่มเสียสมดุล Diversification อาจทำงานได้ไม่เต็มที่")
+else:
+    st.success("🦢 **Antifragile Status:** ระบบยังมีความยืดหยุ่นสูง ความเสี่ยงเชิงระบบอยู่ในระดับต่ำ")
