@@ -294,7 +294,6 @@ st.caption("Data source: Yahoo Finance | Framework: Antifragile Quantitative Ris
 
 ##Section 3 : Simulation
 # --- 5. SECTION 2: SIMULATION PROBABILITY (SANDBOX) ---
-st.divider()
 st.markdown("<h1 style='text-align: center;'>🎮 Simulation Probability</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #64748B;'>ปรับแต่งปัจจัยเพื่อจำลองเหตุการณ์ Black Swan ในแบบของคุณ</p>", unsafe_allow_html=True)
 
@@ -309,23 +308,21 @@ with st.container():
         s_gold = st.slider("Safe Haven Ratio (Gold/Copper)", 200.0, 1000.0, float(g_real))
     with col_s3:
         s_coupling = st.slider("Global Coupling", 0.0, 1.0, float(c_real))
+        # ตัวแปรเซอร์ไพรส์
         st.write("**The Butterfly Effect**")
-        butterfly = st.checkbox("🦋 Trigger Unforeseen Event", help="สุ่มเหตุการณ์ไม่คาดคิด")
-        # ใช้ session_state เพื่อให้ค่า Chaos คงที่เวลา Slider ขยับ
-        if 'chaos_val' not in st.session_state:
-            st.session_state.chaos_val = np.random.uniform(1.3, 3.0)
-        chaos_mult = st.session_state.chaos_val if butterfly else 1.0
+        butterfly = st.checkbox("🦋 Trigger Unforeseen Event", help="สุ่มเหตุการณ์ไม่คาดคิดที่อาจขยายความเสี่ยงทันที")
+        chaos_mult = np.random.uniform(1.3, 3.0) if butterfly else 1.0
 
-# Calculation Logic
-stress_sim = (s_vol * 0.3389 + abs(s_yield/100) * 0.2450 + s_coupling * 0.1463 + (s_kurt/15) * 0.1411) * chaos_mult
+# Calculation for Simulation
+stress_sim = get_stress_score(s_vol, s_yield, s_coupling, s_kurt, s_gold) * chaos_mult
 p_sim_today = estimate_black_swan_mc(stress_sim)
 p_sim_3m = estimate_black_swan_mc(stress_sim + 0.015)
 p_sim_6m = estimate_black_swan_mc(stress_sim + 0.030)
 
-# Dynamic UI
+# Apply Visual Logic
 bg_sim, color_sim, status_sim, shake_sim = apply_dynamic_style(p_sim_today, is_sim=True)
 
-# บล็อกแสดงผล
+# Display Simulation Result
 st.markdown(f"<div style='background-color:{bg_sim}; padding:30px; border-radius:20px; border: 2px solid {color_sim};'>", unsafe_allow_html=True)
 sc1, sc2 = st.columns([1, 2])
 
@@ -333,25 +330,25 @@ with sc1:
     st.markdown(f"<div class='{shake_sim}'>", unsafe_allow_html=True)
     if p_sim_today < 5:
         st.markdown("<span class='duck-icon'>🦆</span>", unsafe_allow_html=True)
-        st.markdown(f"<h3 style='text-align:center; color:{status_color};'>Happy Duck</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='text-align:center; color:{color_sim};'>Happy Duck</h3>", unsafe_allow_html=True)
     elif p_sim_today < 15:
         st.markdown("<span class='duck-icon'>🐥</span>", unsafe_allow_html=True)
-        st.markdown(f"<h3 style='text-align:center; color:{status_color};'>Anxious Duck</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='text-align:center; color:{color_sim};'>Anxious Duck</h3>", unsafe_allow_html=True)
     else:
         st.markdown("<span class='duck-icon'>🦢</span>", unsafe_allow_html=True)
         st.markdown(f"<h3 style='text-align:center; color:white;'>THE BLACK SWAN RAGE!</h3>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 with sc2:
-    if butterfly:
-        st.warning(f"🦋 Butterfly Effect Active: Chaos Multiplier x{chaos_mult:.2f}")
-    st.markdown(f"<h2 style='color:{'white' if p_sim_today >= 15 else color_sim};'>Simulation Risk: {p_sim_today:.2f}%</h2>", unsafe_allow_html=True)
+    if butterfly: st.warning(f"🦋 Butterfly Effect Active: Chaos Multiplier x{chaos_mult:.2f}")
+    st.markdown(f"<h2 style='color:{color_sim if p_sim_today < 15 else 'white'};'>Simulation Risk: {p_sim_today:.2f}%</h2>", unsafe_allow_html=True)
     
     sm1, sm2, sm3 = st.columns(3)
     sm1.metric("Sim Today", f"{p_sim_today:.2f}%", delta=f"{p_sim_today-p_real:+.2f}%")
     sm2.metric("Sim 3M", f"{p_sim_3m:.2f}%")
     sm3.metric("Sim 6M", f"{p_sim_6m:.2f}%")
     
+    # Chart
     fig_path = go.Figure(go.Scatter(x=["Today", "3M", "6M"], y=[p_sim_today, p_sim_3m, p_sim_6m], 
                                    fill='tozeroy', line=dict(color=color_sim, width=4)))
     fig_path.update_layout(height=250, margin=dict(t=20, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
