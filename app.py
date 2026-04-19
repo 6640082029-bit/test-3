@@ -417,7 +417,7 @@ with sc1:
 
     # 3. เพิ่ม height เป็น 280 หรือ 300 เพื่อป้องกันรูปถูกตัด
     st.markdown(f"<div class='{shake_sim}'>", unsafe_allow_html=True)
-    components.html(tenor_embed_code, height=400) 
+    components.html(tenor_embed_code, height=500) 
     
     # 4. แสดงชื่อเรียก
     st.markdown(f"<h3 style='text-align:center; color:{text_color}; margin-top: -10px;'>{label}</h3>", unsafe_allow_html=True)
