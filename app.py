@@ -374,24 +374,27 @@ sc1, sc2 = st.columns([1, 2])
 with sc1:
     st.markdown(f"<div class='{shake_sim}'>", unsafe_allow_html=True)
     
+    # เลือก URL ตามระดับความเสี่ยง
     if p_sim_today < 5:
-        # 1. Happy/Sleeping Psyduck
+        # Psyduck Sleep
         gif_url = "https://media.tenor.com/jM8VreZl_SIAAAAi/psyduck-psyduck-sleep.gif"
-        st.markdown(f"<img src='{gif_url}' class='duck-icon' style='width:100%;'>", unsafe_allow_html=True)
-        st.markdown(f"<h3 style='text-align:center; color:{color_sim};'>Happy Duck</h3>", unsafe_allow_html=True)
-        
+        label = "Happy Duck"
+        text_color = color_sim
     elif p_sim_today < 15:
-        # 2. Anxious/Confused Psyduck (ส่ายหัว)
+        # Psyduck Confused (ส่ายหัว)
         gif_url = "https://media.tenor.com/u74Y6p8m_7AAAAAi/psyduck-psyduck-x-lac-dau.gif"
-        st.markdown(f"<img src='{gif_url}' class='duck-icon' style='width:100%;'>", unsafe_allow_html=True)
-        st.markdown(f"<h3 style='text-align:center; color:{color_sim};'>Anxious Duck</h3>", unsafe_allow_html=True)
-        
+        label = "Anxious Duck"
+        text_color = color_sim
     else:
-        # 3. Shocked Psyduck (Black Swan Rage)
+        # Psyduck Shocked
         gif_url = "https://media.tenor.com/90_T5H57_mIAAAAi/gasp-shock.gif"
-        st.markdown(f"<img src='{gif_url}' class='duck-icon' style='width:100%;'>", unsafe_allow_html=True)
-        st.markdown(f"<h3 style='text-align:center; color:white;'>THE BLACK SWAN RAGE!</h3>", unsafe_allow_html=True)
-        
+        label = "THE BLACK SWAN RAGE!"
+        text_color = "white"
+
+    # ใช้ st.image เพื่อความชัวร์ในการแสดงผลบน Streamlit
+    st.image(gif_url, use_container_width=True)
+    
+    st.markdown(f"<h3 style='text-align:center; color:{text_color};'>{label}</h3>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 with sc2:
