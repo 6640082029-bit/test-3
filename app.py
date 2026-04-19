@@ -371,31 +371,42 @@ bg_sim, color_sim, shake_sim = apply_dynamic_style(p_sim_today, is_sim=True)
 st.markdown(f"<div style='background-color:{bg_sim}; padding:35px; border-radius:25px; border: 3px solid {color_sim};'>", unsafe_allow_html=True)
 sc1, sc2 = st.columns([1, 2])
 
+import streamlit.components.v1 as components
+
 with sc1:
-    st.markdown(f"<div class='{shake_sim}'>", unsafe_allow_html=True)
-    
-    # เลือก URL ตามระดับความเสี่ยง
+    # 1. กำหนด ID ของ Tenor ตามระดับความเสี่ยง
     if p_sim_today < 5:
-        # Psyduck Sleep
-        gif_url = "https://media.tenor.com/jM8VreZl_SIAAAAi/psyduck-psyduck-sleep.gif"
+        # Psyduck นอน
+        tenor_id = "15568846810302620355"
         label = "Happy Duck"
         text_color = color_sim
     elif p_sim_today < 15:
-        # Psyduck Confused (ส่ายหัว)
-        gif_url = "https://media.tenor.com/u74Y6p8m_7AAAAAi/psyduck-psyduck-x-lac-dau.gif"
+        # Psyduck ส่ายหัว
+        tenor_id = "13982082229451252813"
         label = "Anxious Duck"
         text_color = color_sim
     else:
-        # Psyduck Shocked
-        gif_url = "https://media.tenor.com/90_T5H57_mIAAAAi/gasp-shock.gif"
+        # Psyduck ตกใจ
+        tenor_id = "25805348"
         label = "THE BLACK SWAN RAGE!"
         text_color = "white"
 
-    # ใช้ st.image เพื่อความชัวร์ในการแสดงผลบน Streamlit
-    st.image(gif_url, use_container_width=True)
-    
-    st.markdown(f"<h3 style='text-align:center; color:{text_color};'>{label}</h3>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    # 2. สร้างโค้ด Embed แบบ Dynamic
+    tenor_embed_code = f"""
+    <div class="tenor-gif-embed" data-postid="{tenor_id}" data-share-method="host" data-aspect-ratio="1.0" data-width="100%">
+        <a href="https://tenor.com/view/gif-{tenor_id}">Psyduck GIF</a>
+    </div>
+    <script type="text/javascript" async src="https://tenor.com/embed.js"></script>
+    <style>
+        body {{ margin: 0; display: flex; justify-content: center; align-items: center; overflow: hidden; }}
+    </style>
+    """
+
+    # 3. ใช้ components.html เพื่อฝังโค้ด (กำหนดความสูงให้พอดีกับรูป)
+    components.html(tenor_embed_code, height=200)
+
+    # 4. แสดง Label ด้านล่าง
+    st.markdown(f"<h3 style='text-align:center; color:{text_color}; margin-top: -10px;'>{label}</h3>", unsafe_allow_html=True)
 
 with sc2:
     if butterfly: st.warning(f"🦋 Butterfly Effect Active (x{chaos_mult:.2f})")
