@@ -262,24 +262,6 @@ with col_right:
         "Prob": [p_today, p_3m, p_6m]
     })
     
-    fig_path = go.Figure()
-    fig_path.add_trace(go.Scatter(
-        x=df_path["Timeline"], y=df_path["Prob"],
-        mode='lines+markers+text',
-        text=[f"{p_today:.1f}%", f"{p_3m:.1f}%", f"{p_6m:.1f}%"],
-        textposition="top center",
-        line=dict(color=color, width=4),
-        marker=dict(size=10),
-        fill='tozeroy',
-        fillcolor=f'rgba({int(color[1:3],16)}, {int(color[3:5],16)}, {int(color[5:7],16)}, 0.1)'
-    ))
-    fig_path.update_layout(
-        height=320, margin=dict(t=30, b=0, l=10, r=10),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        yaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Probability (%)", range=[0, max(p_6m+5, 15)])
-    )
-    st.plotly_chart(fig_path, use_container_width=True)
-    
     with st.expander("ℹ️ Methodology Insight"):
         st.caption("""
         - **Daily Baseline:** อิงจากสถิติเหตุการณ์หายากระดับโลก (1 ใน 5,000 วันทำการ)
@@ -358,17 +340,6 @@ stress_real = get_stress_score(v_real, y_real, c_real, k_real)
 p_real_today = estimate_black_swan_mc(stress_real)
 p_real_3m = estimate_black_swan_mc(stress_real + 0.012)
 p_real_6m = estimate_black_swan_mc(stress_real + 0.025)
-
-# --- 4. SECTION 1: PREDICTION (REAL-TIME - NO CHANGE) ---
-st.markdown("<h1 style='text-align: center;'>🦢 Prediction of Black Swan Event</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #64748B;'>ค่าพยากรณ์ปัจจุบันอิงจากข้อมูลตลาดจริง (Fixed Reference)</p>", unsafe_allow_html=True)
-
-col_p1, col_p2, col_p3 = st.columns(3)
-col_p1.metric("Current Today", f"{p_real_today:.2f}%")
-col_p2.metric("Current 3M Forward", f"{p_real_3m:.2f}%")
-col_p3.metric("Current 6M Forward", f"{p_real_6m:.2f}%")
-
-st.divider()
 
 # --- 5. SECTION 2: SIMULATION (SANDBOX - CHANGES ON CONTROL) ---
 st.markdown("<h1 style='text-align: center;'>🎮 Simulation Probability Sandbox</h1>", unsafe_allow_html=True)
