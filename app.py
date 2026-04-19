@@ -110,15 +110,7 @@ if df_raw is not None:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-import streamlit as st
-import pandas as pd
-import numpy as np
-import yfinance as yf
-import pandas_datareader.data as web
-import plotly.graph_objects as go
-from sklearn.metrics.pairwise import cosine_similarity
-import datetime
-
+#SECTION 2 Predict
 # --- 1. CONFIG & CUTE THEME ---
 st.set_page_config(page_title="Swan Predictor: Systemic Risk", layout="wide")
 st.markdown("""
