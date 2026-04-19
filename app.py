@@ -192,42 +192,53 @@ except:
 # --- 3. VISUAL GAUGE (เข็มไมล์) ---
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ตรรกะการตีความระดับความเสี่ยง (Interpretation Logic)
+# ตรรกะการเลือกสถานะภาษาอังกฤษ (English Short Label)
 if risk_today >= 70:
-    risk_label = "วิกฤต (Critical Fragility)"
-    risk_desc = "ระบบมีความเปราะบางสูงมาก เสี่ยงต่อการเกิด Black Swan"
+    status_label = "CRITICAL"
     risk_color = "#EF4444" # แดง
 elif risk_today >= 35:
-    risk_label = "เฝ้าระวัง (Elevated Risk)"
-    risk_desc = "ความเสี่ยงเริ่มสะสมในเชิงโครงสร้าง ควรระมัดระวังเป็นพิเศษ"
+    status_label = "ELEVATED"
     risk_color = "#F59E0B" # ส้ม/เหลืองเข้ม
 else:
-    risk_label = "ปกติ (Antifragile Status)"
-    risk_desc = "ระบบมีความยืดหยุ่นสูง ความเสี่ยงเชิงระบบอยู่ในระดับต่ำ"
+    status_label = "NORMAL"
     risk_color = "#10B981" # เขียว
 
+# สร้าง Gauge Chart
 fig = go.Figure(go.Indicator(
     mode = "gauge+number",
     value = risk_today,
     domain = {'x': [0, 1], 'y': [0, 1]},
-    number = {'font': {'size': 80, 'color': '#1E293B'}}, # เอา suffix: "%" ออกแล้ว
+    # ตั้งค่าตัวเลขดัชนี (ไม่มี %)
+    number = {'font': {'size': 90, 'color': '#1E293B'}, 'valueformat': '.1f'},
     gauge = {
-        'axis': {'range': [0, 100], 'tickwidth': 1},
+        'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#475569"},
         'bar': {'color': "#1E293B"},
         'bgcolor': "white",
         'steps': [
-            {'range': [0, 35], 'color': '#BBF7D0'},   # Low
-            {'range': [35, 70], 'color': '#FEF08A'},  # Elevated
-            {'range': [70, 100], 'color': '#FECACA'}], # High
+            {'range': [0, 35], 'color': '#BBF7D0'},
+            {'range': [35, 70], 'color': '#FEF08A'},
+            {'range': [70, 100], 'color': '#FECACA'}],
         'threshold': {
             'line': {'color': "#EF4444", 'width': 5},
             'thickness': 0.75,
             'value': 90}}
 ))
 
+# ปรับตำแหน่ง Label ให้อยู่เหนือตัวเลข
+fig.add_annotation(
+    x=0.5, y=0.4, # ตำแหน่งเหนือตัวเลขดัชนี
+    text=status_label,
+    showarrow=False,
+    font=dict(size=22, color=risk_color, family="Anuphan"),
+    bgcolor="white",
+    bordercolor=risk_color,
+    borderwidth=1,
+    borderpad=5
+)
+
 fig.update_layout(
-    height=400, 
-    margin=dict(l=20, r=20, t=20, b=20),
+    height=450, 
+    margin=dict(l=30, r=30, t=20, b=20),
     paper_bgcolor='rgba(0,0,0,0)',
     font={'family': "Anuphan"}
 )
