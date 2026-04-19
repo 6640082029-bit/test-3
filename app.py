@@ -374,39 +374,54 @@ sc1, sc2 = st.columns([1, 2])
 import streamlit.components.v1 as components
 
 with sc1:
-    # 1. กำหนด ID ของ Tenor ตามระดับความเสี่ยง
+    # 1. กำหนด ID และชื่อเรียกตามระดับความเสี่ยง
     if p_sim_today < 5:
-        # Psyduck นอน
+        # Happy Duck (Psyduck นอน)
         tenor_id = "15568846810302620355"
         label = "Happy Duck"
         text_color = color_sim
     elif p_sim_today < 15:
-        # Psyduck ส่ายหัว
+        # Anxious Duck (Psyduck ส่ายหัว)
         tenor_id = "13982082229451252813"
         label = "Anxious Duck"
         text_color = color_sim
     else:
-        # Psyduck ตกใจ
+        # Panic Duck (Psyduck ตกใจ - ขั้นสุด)
         tenor_id = "25805348"
-        label = "THE BLACK SWAN RAGE!"
+        label = "PANIC DUCK!" 
         text_color = "white"
 
-    # 2. สร้างโค้ด Embed แบบ Dynamic
+    # 2. สร้างโค้ด Embed (ปรับ CSS ให้รูปพอดีกับช่อง)
     tenor_embed_code = f"""
-    <div class="tenor-gif-embed" data-postid="{tenor_id}" data-share-method="host" data-aspect-ratio="1.0" data-width="100%">
-        <a href="https://tenor.com/view/gif-{tenor_id}">Psyduck GIF</a>
+    <style>
+        body {{ 
+            margin: 0; 
+            padding: 0; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            background-color: transparent;
+        }}
+        .tenor-gif-embed {{
+            max-width: 100% !important;
+        }}
+    </style>
+    <div class="tenor-gif-embed" 
+         data-postid="{tenor_id}" 
+         data-share-method="host" 
+         data-aspect-ratio="1.0" 
+         data-width="100%">
     </div>
     <script type="text/javascript" async src="https://tenor.com/embed.js"></script>
-    <style>
-        body {{ margin: 0; display: flex; justify-content: center; align-items: center; overflow: hidden; }}
-    </style>
     """
 
-    # 3. ใช้ components.html เพื่อฝังโค้ด (กำหนดความสูงให้พอดีกับรูป)
-    components.html(tenor_embed_code, height=200)
-
-    # 4. แสดง Label ด้านล่าง
+    # 3. เพิ่ม height เป็น 280 หรือ 300 เพื่อป้องกันรูปถูกตัด
+    st.markdown(f"<div class='{shake_sim}'>", unsafe_allow_html=True)
+    components.html(tenor_embed_code, height=280) 
+    
+    # 4. แสดงชื่อเรียก
     st.markdown(f"<h3 style='text-align:center; color:{text_color}; margin-top: -10px;'>{label}</h3>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 with sc2:
     if butterfly: st.warning(f"🦋 Butterfly Effect Active (x{chaos_mult:.2f})")
