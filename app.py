@@ -191,22 +191,58 @@ except:
 
 # --- 3. VISUAL GAUGE (เข็มไมล์) ---
 st.markdown("<br>", unsafe_allow_html=True)
+
+# ตรรกะการตีความระดับความเสี่ยง (Interpretation Logic)
+if risk_today >= 70:
+    risk_label = "วิกฤต (Critical Fragility)"
+    risk_desc = "ระบบมีความเปราะบางสูงมาก เสี่ยงต่อการเกิด Black Swan"
+    risk_color = "#EF4444" # แดง
+elif risk_today >= 35:
+    risk_label = "เฝ้าระวัง (Elevated Risk)"
+    risk_desc = "ความเสี่ยงเริ่มสะสมในเชิงโครงสร้าง ควรระมัดระวังเป็นพิเศษ"
+    risk_color = "#F59E0B" # ส้ม/เหลืองเข้ม
+else:
+    risk_label = "ปกติ (Antifragile Status)"
+    risk_desc = "ระบบมีความยืดหยุ่นสูง ความเสี่ยงเชิงระบบอยู่ในระดับต่ำ"
+    risk_color = "#10B981" # เขียว
+
 fig = go.Figure(go.Indicator(
     mode = "gauge+number",
     value = risk_today,
-    number = {'suffix': "%", 'font': {'size': 60}},
+    domain = {'x': [0, 1], 'y': [0, 1]},
+    number = {'font': {'size': 80, 'color': '#1E293B'}}, # เอา suffix: "%" ออกแล้ว
     gauge = {
-        'axis': {'range': [0, 100]},
+        'axis': {'range': [0, 100], 'tickwidth': 1},
         'bar': {'color': "#1E293B"},
+        'bgcolor': "white",
         'steps': [
-            {'range': [0, 35], 'color': '#BBF7D0'},
-            {'range': [35, 70], 'color': '#FEF08A'},
-            {'range': [70, 100], 'color': '#FECACA'}],
-        'threshold': {'line': {'color': "red", 'width': 4}, 'value': 90}}
+            {'range': [0, 35], 'color': '#BBF7D0'},   # Low
+            {'range': [35, 70], 'color': '#FEF08A'},  # Elevated
+            {'range': [70, 100], 'color': '#FECACA'}], # High
+        'threshold': {
+            'line': {'color': "#EF4444", 'width': 5},
+            'thickness': 0.75,
+            'value': 90}}
 ))
 
-fig.update_layout(height=450, margin=dict(t=50), paper_bgcolor='rgba(0,0,0,0)', font={'family': "Anuphan"})
+fig.update_layout(
+    height=400, 
+    margin=dict(l=20, r=20, t=20, b=20),
+    paper_bgcolor='rgba(0,0,0,0)',
+    font={'family': "Anuphan"}
+)
+
 st.plotly_chart(fig, use_container_width=True)
+
+# --- 4. DYNAMIC INTERPRETATION DISPLAY ---
+st.markdown(f"""
+    <div style="text-align: center; padding: 25px; border-radius: 15px; 
+                background-color: white; border-top: 5px solid {risk_color}; 
+                box-shadow: 0px 4px 10px rgba(0,0,0,0.05); margin-bottom: 20px;">
+        <h2 style="color: {risk_color}; margin: 0; font-weight: 600;">{risk_label}</h2>
+        <p style="color: #64748B; font-size: 1.1rem; margin-top: 8px;">{risk_desc}</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 # --- 4. PREDICTIONS ---
 st.divider()
