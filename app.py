@@ -115,11 +115,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import pandas_datareader.data as web
 import plotly.graph_objects as go
 import datetime
 
-# --- 1. CONFIG & THEME ---
+# --- 1. CONFIG & CUTE THEME ---
 st.set_page_config(page_title="Swan Predictor", layout="wide")
 st.markdown("""
     <style>
@@ -130,34 +129,29 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("🦢 Global Systemic Risk Index 🖤")
-st.markdown("<center><i>ระบบวิเคราะห์ความเปราะบางของโครงสร้างการเงินโลกล่วงหน้า</i></center>", unsafe_allow_html=True)
+st.markdown("<center><i>ระบบวิเคราะห์ความเปราะบางของโครงสร้างการเงินโลกล่วงหน้า (No-DataReader Version)</i></center>", unsafe_allow_html=True)
 
 # --- 2. BACKEND: DATA FETCHING & ANALYSIS ---
 @st.cache_data(ttl=3600)
 def fetch_and_analyze_fragility():
+    # เพิ่ม Ticker ของ Treasury Yield เข้ามาใน yfinance เลย
     tickers = {
         "NSE_India": "^NSEI", "NYSE": "^NYA", "SSE": "000001.SS",
         "JPX": "^N225", "Euronext": "^N100", "LSE": "^FTSE",
         "VIX": "^VIX", "Gold": "GC=F", "Crude_Oil": "BZ=F",
-        "Copper": "HG=F", "USD_Index": "DX-Y.NYB", "SP500": "^GSPC"
+        "Copper": "HG=F", "USD_Index": "DX-Y.NYB", "SP500": "^GSPC",
+        "10Y_Yield": "^TNX", "2Y_Yield": "^IRX" # ใช้แทน FRED
     }
     
-    # ดึงข้อมูลจาก Yahoo Finance
-    df_yf = yf.download(list(tickers.values()), start="1975-01-01")['Close']
-    df_yf = df_yf.ffill().bfill().rename(columns={v: k for k, v in tickers.items()})
-    df_yf['Gold_Copper_Ratio'] = df_yf['Gold'] / df_yf['Copper']
-
-    # ดึงข้อมูลจาก FRED พร้อมระบบป้องกัน KeyError
-    try:
-        df_macro = web.DataReader(['T10Y2Y'], 'fred', "1975-01-01")
-        df_macro.columns = ['Yield_Curve_Spread']
-    except:
-        df_macro = pd.DataFrame(index=df_yf.index)
-        df_macro['Yield_Curve_Spread'] = 0 # กรณีดึงไม่ได้ ให้ใส่ค่ากลางไว้
-
-    df = pd.concat([df_yf, df_macro], axis=1).ffill().dropna()
+    # ดึงข้อมูลทั้งหมดผ่าน yfinance เพียงตัวเดียว
+    df = yf.download(list(tickers.values()), start="1975-01-01")['Close']
+    df = df.ffill().bfill().rename(columns={v: k for k, v in tickers.items()})
     
-    # คำนวณ 4 Pillars
+    # คำนวณ Ratio และ Yield Spread
+    df['Gold_Copper_Ratio'] = df['Gold'] / df['Copper']
+    df['Yield_Curve_Spread'] = df['10Y_Yield'] - df['2Y_Yield']
+
+    # คำนวณ 4 Pillars (Backend Calculation)
     fragility_df = pd.DataFrame(index=df.index)
     markets = ['NYSE', 'SP500', 'Euronext', 'LSE', 'JPX', 'SSE', 'NSE_India']
     returns = df[markets].pct_change()
@@ -165,7 +159,7 @@ def fetch_and_analyze_fragility():
     fragility_df['Kurtosis'] = returns.rolling(252).kurt().mean(axis=1)
     fragility_df['Volatility'] = returns.rolling(252).std().mean(axis=1) * np.sqrt(252)
     
-    # คำนวณ Correlation (Coupling) แบบปลอดภัย
+    # Correlation (Coupling)
     def calc_coupling(x):
         corr = x.corr()
         return corr.values[np.triu_indices_from(corr.values, k=1)].mean()
@@ -176,10 +170,14 @@ def fetch_and_analyze_fragility():
 
     return fragility_df.dropna()
 
-# รัน Backend ลับๆ
-df_fragility = fetch_and_analyze_fragility()
+# รัน Backend
+try:
+    df_fragility = fetch_and_analyze_fragility()
+except Exception as e:
+    st.error(f"เกิดข้อผิดพลาดในการดึงข้อมูล: {e}")
+    st.stop()
 
-# ฟังก์ชันคำนวณ Score
+# ฟังก์ชันคำนวณ Score (Backend)
 def get_risk_score(data):
     k_score = np.clip((data['Kurtosis'] / 10), 0, 1) * 35 
     v_score = np.clip((data['Volatility'] / 0.4), 0, 1) * 25
@@ -190,52 +188,39 @@ def get_risk_score(data):
 latest = df_fragility.iloc[-1]
 risk_today = get_risk_score(latest)
 
-# คำนวณความเร่ง (Trend)
+# คำนวณความเร่ง (Trend) 3-6 เดือน
 trend = (df_fragility.iloc[-1] - df_fragility.iloc[-22]).mean()
 risk_3m = min(max(risk_today + (trend * 3), 1.5), 99.0)
 risk_6m = min(max(risk_today + (trend * 6), 1.5), 99.0)
 
-# --- 3. DISPLAY: GAUGE CHART (เข็มไมล์) ---
-st.markdown("<br>", unsafe_allow_html=True)
+# --- 3. DISPLAY: GAUGE CHART ---
 fig_gauge = go.Figure(go.Indicator(
     mode = "gauge+number",
     value = risk_today,
     title = {'text': "Today's Systemic Risk", 'font': {'size': 24}},
-    domain = {'x': [0, 1], 'y': [0, 1]},
     gauge = {
-        'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+        'axis': {'range': [0, 100]},
         'bar': {'color': "#01579B"},
-        'bgcolor': "white",
-        'borderwidth': 2,
-        'bordercolor': "gray",
         'steps': [
             {'range': [0, 40], 'color': '#A5D6A7'},
             {'range': [40, 70], 'color': '#FFF59D'},
             {'range': [70, 100], 'color': '#EF9A9A'}],
-        'threshold': {
-            'line': {'color': "red", 'width': 4},
-            'thickness': 0.75,
-            'value': 90}}
+        'threshold': {'line': {'color': "red", 'width': 4}, 'value': 90}}
 ))
-
-fig_gauge.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'family': "Anuphan"})
+fig_gauge.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', font={'family': "Anuphan"})
 st.plotly_chart(fig_gauge, use_container_width=True)
 
 # --- 4. PREDICTION HORIZON ---
 st.divider()
 c1, c2 = st.columns(2)
-with c1:
-    st.metric("3-Month Forward Risk 🦆", f"{risk_3m:.2f}%", f"{risk_3m-risk_today:+.2f}%")
-with c2:
-    st.metric("6-Month Forward Risk 🖤", f"{risk_6m:.2f}%", f"{risk_6m-risk_today:+.2f}%")
+c1.metric("3-Month Forward Risk 🦆", f"{risk_3m:.2f}%", f"{risk_3m-risk_today:+.2f}%")
+c2.metric("6-Month Forward Risk 🖤", f"{risk_6m:.2f}%", f"{risk_6m-risk_today:+.2f}%")
 
 # --- 5. AI INTERPRETATION ---
 st.markdown("<br>", unsafe_allow_html=True)
 if risk_today > 70:
-    st.error("🚨 **CRITICAL FRAGILITY:** ระบบมีความเปราะบางสูงมาก ระวังเหตุการณ์ Black Swan")
+    st.error("🚨 **CRITICAL FRAGILITY:** ระบบเปราะบางสูงมาก")
 elif risk_today > 40:
-    st.warning("⚠️ **ELEVATED RISK:** ระบบเริ่มเสียสมดุล ดัชนีความสัมพันธ์ของตลาดโลกเริ่มพุ่งสูง")
+    st.warning("⚠️ **ELEVATED RISK:** ความเสี่ยงเริ่มสะสมตัว")
 else:
-    st.success("🦢 **ANTIFRAGILE:** ระบบการเงินโลกอยู่ในสภาวะปกติและมีความยืดหยุ่น")
-
-st.caption("Backend Analysis: Kurtosis, Systemic Volatility, Global Coupling, and Macro Yield Spreads are processed.")
+    st.success("🦢 **ANTIFRAGILE:** สภาวะตลาดปกติ")
