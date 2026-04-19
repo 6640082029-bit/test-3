@@ -110,127 +110,257 @@ if df_raw is not None:
     )
     st.plotly_chart(fig, use_container_width=True)
 #SECTION 2 Predict
-##ทดลอง
+#SECTION 2 Predict
 import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
 
-# --- 1. CONFIG ---
-st.set_page_config(page_title="Global Systemic Risk Dashboard", layout="wide")
+# --- 1. CONFIG (ต้องชิดขอบซ้ายสุด ห้ามมีช่องว่างข้างหน้า) ---
+st.set_page_config(page_title="Global Systemic Risk Index", layout="wide")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;600&display=swap');
-    html, body, [data-testid="stAppViewContainer"] { background-color: #F8FAFC !important; font-family: 'Anuphan', sans-serif; }
+    html, body, [data-testid="stAppViewContainer"] {
+        background-color: #F8FAFC !important;
+        font-family: 'Anuphan', sans-serif;
+    }
     h1 { color: #0F172A; text-align: center; font-weight: 600; padding-top: 20px; }
     .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #E2E8F0; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🦢 Global Systemic Risk Index")
-st.markdown("<center style='color: #64748B;'>Systemic Fragility & Black Swan Probability Engine</center>", unsafe_allow_html=True)
+st.markdown("<center style='color: #64748B;'>ดัชนีชี้วัดความเปราะบางของระบบการเงินโลก (Today's Fragility Score)</center>", unsafe_allow_html=True)
 
-# --- 2. BACKEND: DATA & LOGIC ---
+# --- 2. BACKEND ENGINE (ซ่อนการคำนวณ 4 มิติไว้ที่นี่) ---
 @st.cache_data(ttl=3600)
-def fetch_systemic_data():
+def get_systemic_risk_data():
     tickers = {
         "NSE_India": "^NSEI", "NYSE": "^NYA", "SSE": "000001.SS",
         "JPX": "^N225", "Euronext": "^N100", "LSE": "^FTSE",
         "Gold": "GC=F", "Copper": "HG=F", "SP500": "^GSPC",
         "10Y_Yield": "^TNX", "2Y_Yield": "^IRX"
     }
+    
+    # ดึงข้อมูล
     df = yf.download(list(tickers.values()), start="2000-01-01")['Close']
     df = df.ffill().bfill().rename(columns={v: k for k, v in tickers.items()})
     
-    # 4 มิติเบื้องหลัง
+    # คำนวณ Returns
     markets = ['NYSE', 'SP500', 'Euronext', 'LSE', 'JPX', 'SSE', 'NSE_India']
     returns = df[markets].pct_change().dropna()
 
-    frag_df = pd.DataFrame(index=returns.index)
-    frag_df['Kurtosis'] = returns.rolling(252).kurt().mean(axis=1)
-    frag_df['Volatility'] = returns.rolling(252).std().mean(axis=1) * np.sqrt(252)
+    # มิติที่ 1: Kurtosis (Fat-Tail)
+    kurt = returns.rolling(252).kurt().mean(axis=1).iloc[-1]
     
-    # Coupling Calculation
-    def get_avg_corr(window_data):
-        corr_matrix = window_data.corr()
-        mask = np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
-        return corr_matrix.where(mask).stack().mean()
+    # มิติที่ 2: Volatility (Average)
+    vol = (returns.rolling(252).std().mean(axis=1) * np.sqrt(252)).iloc[-1]
+    
+    # มิติที่ 3: Market Coupling (60-day Cross-Correlation)
+    last_60_days = returns.tail(60)
+    corr_matrix = last_60_days.corr()
+    coupling = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)).stack().mean()
+    
+    # มิติที่ 4: Macro Signals
+    yield_spread = (df['10Y_Yield'] - df['2Y_Yield']).iloc[-1]
+    gold_copper = (df['Gold'] / df['Copper']).iloc[-1]
+    
+    # ตรรกะ Score (0-100)
+    score_k = np.clip((kurt / 12), 0, 1) * 30
+    score_v = np.clip((vol / 0.45), 0, 1) * 20
+    score_c = np.clip((coupling / 0.85), 0, 1) * 30
+    score_m = (20 if yield_spread < 0 else 0) + (np.clip(gold_copper / 700, 0, 1) * 10)
+    
+    final_risk = min(max(score_k + score_v + score_c + score_m, 2.5), 98.5)
+    
+    # คำนวณค่าการเปลี่ยนแปลง (Trend) สำหรับ Predictor
+    trend_22d = (returns.tail(22).mean(axis=1).mean()) * 1000 # ขยายสัญญาณ
+    risk_3m = min(max(final_risk + trend_22d, 1.5), 99.0)
+    risk_6m = min(max(final_risk + (trend_22d * 2), 1.5), 99.0)
+    
+    return final_risk, risk_3m, risk_6m
 
-    coupling_vals = [np.nan]*60
-    for i in range(60, len(returns)):
-        coupling_vals.append(get_avg_corr(returns.iloc[i-60:i]))
-    
-    frag_df['Coupling'] = coupling_vals
-    frag_df['Yield_Signal'] = (df['10Y_Yield'] - df['2Y_Yield']).reindex(frag_df.index)
-    frag_df['Safe_Haven'] = (df['Gold'] / df['Copper']).reindex(frag_df.index)
-    
-    return frag_df.dropna()
-
+# ดึงผลลัพธ์
 try:
-    df_fragility = fetch_systemic_data()
-    latest = df_fragility.iloc[-1]
-except Exception as e:
-    st.error(f"Data Fetch Error: {e}")
+    risk_today, r3m, r6m = get_systemic_risk_data()
+except:
+    st.error("ไม่สามารถเชื่อมต่อข้อมูลตลาดโลกได้")
     st.stop()
 
-# --- 3. RISK & PROBABILITY CALCULATION ---
-# มิติ Index (0-100)
-def calc_index(row):
-    score = (np.clip(row['Kurtosis']/12, 0, 1)*30 + np.clip(row['Volatility']/0.45, 0, 1)*20 + 
-             np.clip(row['Coupling']/0.85, 0, 1)*30 + (20 if row['Yield_Signal'] < 0 else 0))
-    return min(max(score, 2.5), 98.5)
-
-risk_today = calc_index(latest)
-
-# มิติ Probability (ML Pattern Recognition)
-def calc_probability(row):
-    # น้ำหนัก Feature Importance ที่คุณเรียนรู้มา
-    stress_score = (row['Volatility'] * 0.3389 + abs(row['Yield_Signal']) * 0.2450 + 
-                    row['Coupling'] * 0.1463 + (row['Kurtosis']/15) * 0.1411 + (row['Safe_Haven']/800) * 0.1284)
-    # เทียบกับขีดจำกัดความเครียด 0.0549
-    prob = 1 / (1 + np.exp(-100 * (stress_score - 0.0549)))
-    return prob * 100, stress_score
-
-prob_today, stress_today = calc_probability(latest)
-
-# พยากรณ์ล่วงหน้า (Acceleration)
-trend = (df_fragility.iloc[-1] - df_fragility.iloc[-22])
-prob_3m, _ = calc_probability(latest + (trend * 1.5))
-prob_6m, _ = calc_probability(latest + (trend * 3.0))
-
-# --- 4. VISUAL GAUGE & STATUS ---
-if risk_today >= 70:
-    status_label, risk_color = "CRITICAL", "#EF4444"
-elif risk_today >= 35:
-    status_label, risk_color = "ELEVATED", "#F59E0B"
-else:
-    status_label, risk_color = "NORMAL", "#10B981"
-
+# --- 3. VISUAL GAUGE (เข็มไมล์) ---
 st.markdown("<br>", unsafe_allow_html=True)
+
+# ตรรกะการเลือกสถานะภาษาอังกฤษ (English Short Label)
+if risk_today >= 70:
+    status_label = "CRITICAL"
+    risk_color = "#EF4444" # แดง
+elif risk_today >= 35:
+    status_label = "ELEVATED"
+    risk_color = "#F59E0B" # ส้ม/เหลืองเข้ม
+else:
+    status_label = "NORMAL"
+    risk_color = "#10B981" # เขียว
+
+# สร้าง Gauge Chart
 fig = go.Figure(go.Indicator(
-    mode = "gauge+number", value = risk_today,
-    number = {'font': {'size': 80, 'color': '#1E293B'}, 'valueformat': '.1f'},
+    mode = "gauge+number",
+    value = risk_today,
+    domain = {'x': [0, 1], 'y': [0, 1]},
+    # ตั้งค่าตัวเลขดัชนี (ไม่มี %)
+    number = {'font': {'size': 90, 'color': '#1E293B'}, 'valueformat': '.1f'},
     gauge = {
-        'axis': {'range': [0, 100]}, 'bar': {'color': "#1E293B"},
-        'steps': [{'range': [0, 35], 'color': '#BBF7D0'}, {'range': [35, 70], 'color': '#FEF08A'}, {'range': [70, 100], 'color': '#FECACA'}],
-        'threshold': {'line': {'color': "red", 'width': 5}, 'value': 90}}
+        'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#475569"},
+        'bar': {'color': "#1E293B"},
+        'bgcolor': "white",
+        'steps': [
+            {'range': [0, 35], 'color': '#BBF7D0'},
+            {'range': [35, 70], 'color': '#FEF08A'},
+            {'range': [70, 100], 'color': '#FECACA'}],
+        'threshold': {
+            'line': {'color': "#EF4444", 'width': 5},
+            'thickness': 0.75,
+            'value': 90}}
 ))
 
-fig.add_annotation(x=0.5, y=0.4, text=status_label, showarrow=False, font=dict(size=24, color=risk_color, weight="bold"))
-fig.update_layout(height=400, margin=dict(t=20, b=20), paper_bgcolor='rgba(0,0,0,0)')
+# ปรับตำแหน่ง Label ให้อยู่เหนือตัวเลข
+fig.add_annotation(
+    x=0.5, y=0.4, # ตำแหน่งเหนือตัวเลขดัชนี
+    text=status_label,
+    showarrow=False,
+    font=dict(size=22, color=risk_color, family="Anuphan"),
+    bgcolor="white",
+    bordercolor=risk_color,
+    borderwidth=1,
+    borderpad=5
+)
+
+fig.update_layout(
+    height=450, 
+    margin=dict(l=30, r=30, t=20, b=20),
+    paper_bgcolor='rgba(0,0,0,0)',
+    font={'family': "Anuphan"}
+)
+
 st.plotly_chart(fig, use_container_width=True)
 
-# --- 5. PROBABILITY FORECAST ---
-st.divider()
-st.subheader("🔮 Black Swan Probability Forecast")
-c1, c2, c3 = st.columns(3)
-c1.metric("Today's Probability", f"{prob_today:.2f}%")
-c2.metric("3-Month Forecast", f"{prob_3m:.2f}%", f"{prob_3m-prob_today:+.2f}%")
-c3.metric("6-Month Forecast", f"{prob_6m:.2f}%", f"{prob_6m-prob_today:+.2f}%")
+# --- 4. DYNAMIC INTERPRETATION DISPLAY ---
+st.markdown(f"""
+    <div style="text-align: center; padding: 25px; border-radius: 15px; 
+                background-color: white; border-top: 5px solid {risk_color}; 
+                box-shadow: 0px 4px 10px rgba(0,0,0,0.05); margin-bottom: 20px;">
+        <h2 style="color: {risk_color}; margin: 0; font-weight: 600;">{risk_label}</h2>
+        <p style="color: #64748B; font-size: 1.1rem; margin-top: 8px;">{risk_desc}</p>
+    </div>
+    """, unsafe_allow_html=True)
+## Section 2.1 Predict prob 3 scenerio
+import streamlit as st
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
 
-if stress_today > 0.0549:
-    st.error(f"🚨 **STRESS ALERT:** Systemic Stress ({stress_today:.4f}) exceeded threshold (0.0549)!")
-else:
-    st.success(f"🛡️ **SYSTEMIC STABILITY:** Stress Level at {stress_today:.4f} (Under 0.0549)")
+# --- 1. SETTINGS & STYLING ---
+st.set_page_config(page_title="Black Swan Predictor", layout="wide")
+
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;600&display=swap');
+    html, body, [data-testid="stAppViewContainer"] { background-color: #F8FAFC !important; font-family: 'Anuphan', sans-serif; }
+    .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #E2E8F0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    h3 { color: #1E293B; font-weight: 600; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. CORE ENGINE (Monte Carlo Logic) ---
+def estimate_black_swan_mc(current_stress, horizon_days=30, simulations=50000):
+    baseline_daily_prob = 1 / 5000 # 1 in 5,000 days baseline
+    threshold = 0.0549
+    
+    # Power Law Risk Factor (Tuned at 1.15)
+    if current_stress > threshold:
+        risk_factor = np.power(current_stress / threshold, 1.15)
+    else:
+        risk_factor = current_stress / threshold
+        
+    adjusted_daily_prob = baseline_daily_prob * risk_factor
+    
+    # Vectorized Monte Carlo Simulation
+    draws = np.random.random((simulations, horizon_days))
+    success_count = np.any(draws < adjusted_daily_prob, axis=1).sum()
+    
+    return (success_count / simulations) * 100
+
+# --- 3. MOCKED DATA INPUTS ---
+# (ในแอปจริง ส่วนนี้จะดึงมาจากฐานข้อมูลหรือคำนวณจาก yfinance)
+st.title("🔮 Black Swan Probability Forecast")
+st.markdown("<p style='text-align: center; color: #64748B;'>Predicting 'Rare Events' through Systemic Stress & Monte Carlo Simulation</p>", unsafe_allow_html=True)
+
+# จำลองค่าปัจจุบัน (อิงจาก Insight ที่คุณได้รับมา)
+stress_today = 0.4189  
+monthly_trend = 0.015
+
+# คำนวณค่าล่วงหน้าพร้อม Mean Reversion (การปรับตัวของระบบ)
+stress_3m = stress_today + (monthly_trend * 3 * 0.85)
+stress_6m = stress_today + (monthly_trend * 6 * 0.70)
+
+p_today = estimate_black_swan_mc(stress_today)
+p_3m = estimate_black_swan_mc(stress_3m)
+p_6m = estimate_black_swan_mc(stress_6m)
+
+# --- 4. VISUALIZATION: METRICS ---
+st.divider()
+c1, c2, c3 = st.columns(3)
+
+with c1:
+    st.metric(label="Probability [TODAY]", value=f"{p_today:.2f}%")
+    st.caption("Current 30-day window risk")
+
+with c2:
+    st.metric(label="3-Month Forecast", value=f"{p_3m:.2f}%", delta=f"{p_3m-p_today:+.2f}%")
+    st.caption("Projected stress accumulation")
+
+with c3:
+    st.metric(label="6-Month Forecast", value=f"{p_6m:.2f}%", delta=f"{p_6m-p_today:+.2f}%")
+    st.caption("Long-term fragility path")
+
+# --- 5. VISUALIZATION: RISK PATH CHART ---
+st.write("### Risk Projection Trend")
+df_chart = pd.DataFrame({
+    "Timeline": ["Today", "3 Months", "6 Months"],
+    "Probability": [p_today, p_3m, p_6m]
+})
+
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=df_chart["Timeline"], 
+    y=df_chart["Probability"],
+    mode='lines+markers+text',
+    text=[f"{p_today:.2f}%", f"{p_3m:.2f}%", f"{p_6m:.2f}%"],
+    textposition="top center",
+    line=dict(color='#EF4444', width=4),
+    marker=dict(size=12, color='#1E293B'),
+    fill='tozeroy',
+    fillcolor='rgba(239, 68, 68, 0.1)'
+))
+
+fig.update_layout(
+    yaxis=dict(title="Probability (%)", range=[0, max(p_6m + 5, 20)]),
+    xaxis=dict(title="Timeline"),
+    height=400,
+    margin=dict(l=20, r=20, t=20, b=20),
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    font={'family': "Anuphan"}
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# --- 6. METHODOLOGY INSIGHT (FOOTER) ---
+with st.expander("ℹ️ Methodology & Decision Rules"):
+    st.write(f"""
+    - **Baseline Strategy:** อิงจากสถิติเหตุการณ์หายากระดับโลก (1 ใน 5,000 วันทำการ)
+    - **Monte Carlo Engine:** จำลองสถานการณ์ตลาดล่วงหน้า 50,000 รูปแบบในทุกจุดที่ทำนาย
+    - **Power Law Scaling:** ความเครียดเชิงระบบ ({stress_today:.4f}) ถูกคำนวณแบบทวีคูณเพื่อหาโอกาสเกิดที่แท้จริง
+    - **Mean Reversion:** การพยากรณ์ระยะยาวรวมปัจจัยการปรับตัวของนโยบายเศรษฐกิจเพื่อลดความร้อนแรงของระบบ
+    """)
