@@ -255,21 +255,7 @@ st.markdown(f"""
     </div>
     """, unsafe_allow_html=True)
 
-# --- 4. PREDICTIONS ---
-st.divider()
-c1, c2 = st.columns(2)
-c1.metric("3-Month Forward Predictor", f"{r3m:.2f}%", f"{r3m-risk_today:+.2f}%")
-c2.metric("6-Month Forward Predictor", f"{r6m:.2f}%", f"{r6m-risk_today:+.2f}%")
-
-# --- 5. INTERPRETATION ---
-if risk_today > 70:
-    st.error("🚨 **CRITICAL FRAGILITY:** ระบบเปราะบางสูง โอกาสเกิด Black Swan มีมาก")
-elif risk_today > 35:
-    st.warning("⚠️ **ELEVATED RISK:** ความเสี่ยงเริ่มสะสม ควรระมัดระวัง")
-else:
-    st.success("Swan Status: **ANTIFRAGILE**")
 # --- 5. BLACK SWAN PROBABILITY ENGINE (Backend) ---
-
 def calculate_black_swan_prob(frag_row):
     # 1. คำนวณ Systemic Stress (Insight Mining)
     # ให้น้ำหนักตามที่ AI ของคุณเรียนรู้มา (Feature Importance)
