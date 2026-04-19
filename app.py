@@ -303,22 +303,19 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Black Swan Sandbox", layout="wide")
 
 def apply_dynamic_style(prob, is_sim=False):
+    # เขียว (<5%), ส้ม (5-15%), แดง (>15%)
     if prob < 5:
-        bg_color, status_color, status_text = "#ECFDF5", "#10B981", "NORMAL (Safe Haven)"
+        bg_color, status_color = "#ECFDF5", "#10B981"
     elif prob < 15:
-        bg_color, status_color, status_text = "#FFF7ED", "#F59E0B", "ELEVATED (Anxious)"
+        bg_color, status_color = "#FFF7ED", "#F59E0B"
     else:
-        bg_color, status_color, status_text = "#450A0A" if is_sim else "#FEF2F2", "#EF4444", "CRITICAL (Black Swan!)"
+        bg_color, status_color = "#450A0A" if is_sim else "#FEF2F2", "#EF4444"
     
     shake_class = "shake" if prob >= 5 else ""
-    
     st.markdown(f"""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;600&display=swap');
-        html, body, [data-testid="stAppViewContainer"] {{
-            font-family: 'Anuphan', sans-serif;
-            transition: background-color 0.8s ease;
-        }}
+        html, body, [data-testid="stAppViewContainer"] {{ font-family: 'Anuphan', sans-serif; transition: all 0.5s ease; }}
         .shake {{ animation: shake 0.5s infinite; }}
         @keyframes shake {{
             0% {{ transform: translate(1px, 1px) rotate(0deg); }}
@@ -329,7 +326,7 @@ def apply_dynamic_style(prob, is_sim=False):
         .duck-icon {{ font-size: 100px; text-align: center; display: block; }}
         </style>
         """, unsafe_allow_html=True)
-    return bg_color, status_color, status_text, shake_class
+    return bg_color, status_color, shake_class
 
 # --- 2. BACKEND ENGINES ---
 @st.cache_data(ttl=3600)
@@ -352,45 +349,54 @@ def estimate_black_swan_mc(stress, horizon_days=30, simulations=50000):
     draws = np.random.random((simulations, horizon_days))
     return (np.any(draws < (baseline_daily_prob * risk_factor), axis=1).sum() / simulations) * 100
 
-def get_stress_score(v, y, c, k, g):
-    # g (Gold/Copper) ใส่ไว้เพื่อให้ครบตามโครงสร้างเดิม แต่ไม่ได้ถ่วงน้ำหนักหลักเพื่อกันค่าดีดเกินจริง
+def get_stress_score(v, y, c, k):
     return (v * 0.3389 + abs(y/100) * 0.2450 + c * 0.1463 + (k/15) * 0.1411)
 
-# --- 3. EXECUTION: FETCH INITIAL DATA ---
+# --- 3. FETCH REAL DATA (STATIC REFERENCE) ---
 v_real, y_real, c_real, k_real, g_real = get_realtime_data()
-stress_real = get_stress_score(v_real, y_real, c_real, k_real, g_real)
-p_real = estimate_black_swan_mc(stress_real)
+stress_real = get_stress_score(v_real, y_real, c_real, k_real)
+p_real_today = estimate_black_swan_mc(stress_real)
+p_real_3m = estimate_black_swan_mc(stress_real + 0.012)
+p_real_6m = estimate_black_swan_mc(stress_real + 0.025)
 
-# --- 4. SECTION: SIMULATION PROBABILITY (SANDBOX) ---
+# --- 4. SECTION 1: PREDICTION (REAL-TIME - NO CHANGE) ---
+st.markdown("<h1 style='text-align: center;'>🦢 Prediction of Black Swan Event</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #64748B;'>ค่าพยากรณ์ปัจจุบันอิงจากข้อมูลตลาดจริง (Fixed Reference)</p>", unsafe_allow_html=True)
+
+col_p1, col_p2, col_p3 = st.columns(3)
+col_p1.metric("Current Today", f"{p_real_today:.2f}%")
+col_p2.metric("Current 3M Forward", f"{p_real_3m:.2f}%")
+col_p3.metric("Current 6M Forward", f"{p_real_6m:.2f}%")
+
+st.divider()
+
+# --- 5. SECTION 2: SIMULATION (SANDBOX - CHANGES ON CONTROL) ---
 st.markdown("<h1 style='text-align: center;'>🎮 Simulation Probability Sandbox</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #64748B;'>ปรับแต่งปัจจัยเพื่อจำลองเหตุการณ์ Black Swan (เริ่มต้นจากค่าปัจจุบัน)</p>", unsafe_allow_html=True)
 
 with st.container():
-    col_s1, col_s2, col_s3 = st.columns(3)
-    with col_s1:
-        s_vol = st.slider("Market Panic (Volatility)", 0.05, 0.90, float(v_real), help="0.1-0.2 ปกติ, 0.4+ เริ่มอันตราย")
-        s_kurt = st.slider("Fat-Tail (Kurtosis)", 0.0, 20.0, float(k_real), help="ค่าความประหลาดของตลาด")
-    with col_s2:
-        s_yield = st.slider("Yield Spread (10Y-2Y)", -1.50, 1.50, float(y_real), help="ติดลบคือสัญญาณเศรษฐกิจถดถอย")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        s_vol = st.slider("Volatility (VIX)", 0.05, 0.90, float(v_real))
+        s_kurt = st.slider("Kurtosis (Fat-Tail)", 0.0, 20.0, float(k_real))
+    with c2:
+        s_yield = st.slider("Yield Spread", -1.50, 1.50, float(y_real))
         s_gold = st.slider("Gold/Copper Ratio", 200.0, 1000.0, float(g_real))
-    with col_s3:
-        s_coupling = st.slider("Global Coupling", 0.0, 1.0, float(c_real), help="1.0 คือทุกตลาดผูกติดกันหมด")
-        st.write("**The Butterfly Effect**")
+    with c3:
+        s_coupling = st.slider("Global Coupling", 0.0, 1.0, float(c_real))
         butterfly = st.checkbox("🦋 Activate Surprise Shock")
-        
         if 'chaos_val' not in st.session_state:
-            st.session_state.chaos_val = np.random.uniform(1.3, 2.5)
+            st.session_state.chaos_val = np.random.uniform(1.4, 2.5)
         chaos_mult = st.session_state.chaos_val if butterfly else 1.0
 
-# Calculation
-stress_sim = get_stress_score(s_vol, s_yield, s_coupling, s_kurt, s_gold) * chaos_mult
+# Calculation for SIMULATION ONLY
+stress_sim = get_stress_score(s_vol, s_yield, s_coupling, s_kurt) * chaos_mult
 p_sim_today = estimate_black_swan_mc(stress_sim)
 p_sim_3m = estimate_black_swan_mc(stress_sim + 0.015)
 p_sim_6m = estimate_black_swan_mc(stress_sim + 0.030)
 
-# Visual Logic
-bg_sim, color_sim, status_sim, shake_sim = apply_dynamic_style(p_sim_today, is_sim=True)
+bg_sim, color_sim, shake_sim = apply_dynamic_style(p_sim_today, is_sim=True)
 
+# UI Display
 st.markdown(f"<div style='background-color:{bg_sim}; padding:35px; border-radius:25px; border: 3px solid {color_sim};'>", unsafe_allow_html=True)
 sc1, sc2 = st.columns([1, 2])
 
@@ -408,28 +414,18 @@ with sc1:
     st.markdown("</div>", unsafe_allow_html=True)
 
 with sc2:
-    if butterfly:
-        st.warning(f"🦋 Butterfly Effect Active: Chaos Multiplier x{chaos_mult:.2f}")
+    if butterfly: st.warning(f"🦋 Butterfly Effect Active (x{chaos_mult:.2f})")
     st.markdown(f"<h2 style='color:{'white' if p_sim_today >= 15 else color_sim};'>Simulated Risk: {p_sim_today:.2f}%</h2>", unsafe_allow_html=True)
     
     sm1, sm2, sm3 = st.columns(3)
-    sm1.metric("Sim Today", f"{p_sim_today:.2f}%", delta=f"{p_sim_today-p_real:+.2f}%", delta_color="inverse")
-    sm2.metric("Sim 3M", f"{p_sim_3m:.2f}%")
-    sm3.metric("Sim 6M", f"{p_sim_6m:.2f}%")
+    # delta จะเทียบค่า Sim กับค่า Real-time ข้างบนให้เห็นความต่าง
+    sm1.metric("Sim Today", f"{p_sim_today:.2f}%", delta=f"{p_sim_today-p_real_today:+.2f}%", delta_color="inverse")
+    sm2.metric("Sim 3M", f"{p_sim_3m:.2f}%", delta=f"{p_sim_3m-p_real_3m:+.2f}%", delta_color="inverse")
+    sm3.metric("Sim 6M", f"{p_sim_6m:.2f}%", delta=f"{p_sim_6m-p_real_6m:+.2f}%", delta_color="inverse")
     
-    fig_path = go.Figure(go.Scatter(
-        x=["Today", "3M", "6M"], 
-        y=[p_sim_today, p_sim_3m, p_sim_6m], 
-        fill='tozeroy', 
-        line=dict(color=color_sim if p_sim_today < 15 else "white", width=4)
-    ))
-    fig_path.update_layout(
-        height=250, 
-        margin=dict(t=20, b=0, l=10, r=10), 
-        paper_bgcolor='rgba(0,0,0,0)', 
-        plot_bgcolor='rgba(0,0,0,0)',
-        yaxis=dict(gridcolor='rgba(255,255,255,0.1)')
-    )
+    fig_path = go.Figure(go.Scatter(x=["Today", "3M", "6M"], y=[p_sim_today, p_sim_3m, p_sim_6m], 
+                                   fill='tozeroy', line=dict(color=color_sim if p_sim_today < 15 else "white", width=4)))
+    fig_path.update_layout(height=250, margin=dict(t=20, b=0, l=10, r=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     st.plotly_chart(fig_path, use_container_width=True)
 
 st.markdown("</div>", unsafe_allow_html=True)
