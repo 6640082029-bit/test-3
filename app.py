@@ -254,58 +254,127 @@ st.markdown(f"""
         <p style="color: #64748B; font-size: 1.1rem; margin-top: 8px;">{risk_desc}</p>
     </div>
     """, unsafe_allow_html=True)
+##ทดลอง
+import streamlit as st
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import plotly.graph_objects as go
 
-# --- 5. BLACK SWAN PROBABILITY ENGINE (Backend) ---
-def calculate_black_swan_prob(frag_row):
-    # 1. คำนวณ Systemic Stress (Insight Mining)
-    # ให้น้ำหนักตามที่ AI ของคุณเรียนรู้มา (Feature Importance)
-    stress_score = (
-        (frag_row['Volatility'] * 0.3389) +
-        (abs(frag_row['Yield_Signal']) * 0.2450) + # Yield Curve Stress
-        (frag_row['Coupling'] * 0.1463) +
-        (frag_row['Kurtosis'] / 15 * 0.1411) +    # Normalize Kurtosis
-        (frag_row['Safe_Haven'] / 800 * 0.1284)
-    )
+# --- 1. CONFIG ---
+st.set_page_config(page_title="Global Systemic Risk Dashboard", layout="wide")
+
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;600&display=swap');
+    html, body, [data-testid="stAppViewContainer"] { background-color: #F8FAFC !important; font-family: 'Anuphan', sans-serif; }
+    h1 { color: #0F172A; text-align: center; font-weight: 600; padding-top: 20px; }
+    .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #E2E8F0; }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.title("🦢 Global Systemic Risk Index")
+st.markdown("<center style='color: #64748B;'>Systemic Fragility & Black Swan Probability Engine</center>", unsafe_allow_html=True)
+
+# --- 2. BACKEND: DATA & LOGIC ---
+@st.cache_data(ttl=3600)
+def fetch_systemic_data():
+    tickers = {
+        "NSE_India": "^NSEI", "NYSE": "^NYA", "SSE": "000001.SS",
+        "JPX": "^N225", "Euronext": "^N100", "LSE": "^FTSE",
+        "Gold": "GC=F", "Copper": "HG=F", "SP500": "^GSPC",
+        "10Y_Yield": "^TNX", "2Y_Yield": "^IRX"
+    }
+    df = yf.download(list(tickers.values()), start="2000-01-01")['Close']
+    df = df.ffill().bfill().rename(columns={v: k for k, v in tickers.items()})
     
-    # 2. คำนวณ Probability โดยเทียบกับค่าวิกฤต (Taleb's Evidence: 0.0549)
-    # ใช้ Sigmoid-like scaling เพื่อเปลี่ยน Stress เป็น %
-    critical_threshold = 0.0549
-    probability = 1 / (1 + np.exp(-100 * (stress_score - critical_threshold)))
+    # 4 มิติเบื้องหลัง
+    markets = ['NYSE', 'SP500', 'Euronext', 'LSE', 'JPX', 'SSE', 'NSE_India']
+    returns = df[markets].pct_change().dropna()
+
+    frag_df = pd.DataFrame(index=returns.index)
+    frag_df['Kurtosis'] = returns.rolling(252).kurt().mean(axis=1)
+    frag_df['Volatility'] = returns.rolling(252).std().mean(axis=1) * np.sqrt(252)
     
-    return min(max(probability * 100, 0.0), 100.0), stress_score
+    # Coupling Calculation
+    def get_avg_corr(window_data):
+        corr_matrix = window_data.corr()
+        mask = np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+        return corr_matrix.where(mask).stack().mean()
 
-# คำนวณวันนี้
-prob_today, stress_today = calculate_black_swan_prob(latest)
+    coupling_vals = [np.nan]*60
+    for i in range(60, len(returns)):
+        coupling_vals.append(get_avg_corr(returns.iloc[i-60:i]))
+    
+    frag_df['Coupling'] = coupling_vals
+    frag_df['Yield_Signal'] = (df['10Y_Yield'] - df['2Y_Yield']).reindex(frag_df.index)
+    frag_df['Safe_Haven'] = (df['Gold'] / df['Copper']).reindex(frag_df.index)
+    
+    return frag_df.dropna()
 
-# คำนวณล่วงหน้า (ใช้ Acceleration ของความเครียดสะสม)
-stress_velocity = (df_fragility['Coupling'].diff().tail(22).mean() * 5) # ตัวเร่งจาก Coupling
-prob_3m, _ = calculate_black_swan_prob(latest + (stress_velocity * 3))
-prob_6m, _ = calculate_black_swan_prob(latest + (stress_velocity * 6))
+try:
+    df_fragility = fetch_systemic_data()
+    latest = df_fragility.iloc[-1]
+except Exception as e:
+    st.error(f"Data Fetch Error: {e}")
+    st.stop()
 
-# --- 6. DISPLAY: PROBABILITY DASHBOARD ---
+# --- 3. RISK & PROBABILITY CALCULATION ---
+# มิติ Index (0-100)
+def calc_index(row):
+    score = (np.clip(row['Kurtosis']/12, 0, 1)*30 + np.clip(row['Volatility']/0.45, 0, 1)*20 + 
+             np.clip(row['Coupling']/0.85, 0, 1)*30 + (20 if row['Yield_Signal'] < 0 else 0))
+    return min(max(score, 2.5), 98.5)
+
+risk_today = calc_index(latest)
+
+# มิติ Probability (ML Pattern Recognition)
+def calc_probability(row):
+    # น้ำหนัก Feature Importance ที่คุณเรียนรู้มา
+    stress_score = (row['Volatility'] * 0.3389 + abs(row['Yield_Signal']) * 0.2450 + 
+                    row['Coupling'] * 0.1463 + (row['Kurtosis']/15) * 0.1411 + (row['Safe_Haven']/800) * 0.1284)
+    # เทียบกับขีดจำกัดความเครียด 0.0549
+    prob = 1 / (1 + np.exp(-100 * (stress_score - 0.0549)))
+    return prob * 100, stress_score
+
+prob_today, stress_today = calc_probability(latest)
+
+# พยากรณ์ล่วงหน้า (Acceleration)
+trend = (df_fragility.iloc[-1] - df_fragility.iloc[-22])
+prob_3m, _ = calc_probability(latest + (trend * 1.5))
+prob_6m, _ = calc_probability(latest + (trend * 3.0))
+
+# --- 4. VISUAL GAUGE & STATUS ---
+if risk_today >= 70:
+    status_label, risk_color = "CRITICAL", "#EF4444"
+elif risk_today >= 35:
+    status_label, risk_color = "ELEVATED", "#F59E0B"
+else:
+    status_label, risk_color = "NORMAL", "#10B981"
+
+st.markdown("<br>", unsafe_allow_html=True)
+fig = go.Figure(go.Indicator(
+    mode = "gauge+number", value = risk_today,
+    number = {'font': {'size': 80, 'color': '#1E293B'}, 'valueformat': '.1f'},
+    gauge = {
+        'axis': {'range': [0, 100]}, 'bar': {'color': "#1E293B"},
+        'steps': [{'range': [0, 35], 'color': '#BBF7D0'}, {'range': [35, 70], 'color': '#FEF08A'}, {'range': [70, 100], 'color': '#FECACA'}],
+        'threshold': {'line': {'color': "red", 'width': 5}, 'value': 90}}
+))
+
+fig.add_annotation(x=0.5, y=0.4, text=status_label, showarrow=False, font=dict(size=24, color=risk_color, weight="bold"))
+fig.update_layout(height=400, margin=dict(t=20, b=20), paper_bgcolor='rgba(0,0,0,0)')
+st.plotly_chart(fig, use_container_width=True)
+
+# --- 5. PROBABILITY FORECAST ---
 st.divider()
 st.subheader("🔮 Black Swan Probability Forecast")
-st.markdown("<center><i>Probability of a Black Swan event based on Systemic Stress Pattern Recognition</i></center>", unsafe_allow_html=True)
+c1, c2, c3 = st.columns(3)
+c1.metric("Today's Probability", f"{prob_today:.2f}%")
+c2.metric("3-Month Forecast", f"{prob_3m:.2f}%", f"{prob_3m-prob_today:+.2f}%")
+c3.metric("6-Month Forecast", f"{prob_6m:.2f}%", f"{prob_6m-prob_today:+.2f}%")
 
-p_col1, p_col2, p_col3 = st.columns(3)
-
-with p_col1:
-    st.metric("Probability (Today)", f"{prob_today:.2f}%")
-    st.caption("Based on current pattern")
-
-with p_col2:
-    st.metric("3-Month Forecast", f"{prob_3m:.2f}%", f"{prob_3m - prob_today:+.2f}%")
-    st.caption("Projected Stress Trend")
-
-with p_col3:
-    st.metric("6-Month Forecast", f"{prob_6m:.2f}%", f"{prob_6m - prob_today:+.2f}%")
-    st.caption("Long-term Fragility Path")
-
-# --- 7. STRATEGIC ALERT (จากบทเรียน Taleb) ---
-st.markdown("<br>", unsafe_allow_html=True)
 if stress_today > 0.0549:
-    st.error(f"⚠️ **SYSTEMIC STRESS ALERT:** ระดับความเครียดปัจจุบันอยู่ที่ {stress_today:.4f} ซึ่งสูงกว่าเกณฑ์วิกฤต (0.0549) ระวังการเกิด Black Swan ภายใน 30-90 วัน!")
+    st.error(f"🚨 **STRESS ALERT:** Systemic Stress ({stress_today:.4f}) exceeded threshold (0.0549)!")
 else:
-    st.info(f"🛡️ **SYSTEMIC STRESS:** {stress_today:.4f} / Threshold: 0.0549 (ระบบยังอยู่ในสภาวะปกติ)")
-
-st.caption("Machine Learning Logic: Random Forest Weighted Analysis (Volatility, Yield, Coupling, Kurtosis, Safe Haven)")
+    st.success(f"🛡️ **SYSTEMIC STABILITY:** Stress Level at {stress_today:.4f} (Under 0.0549)")
