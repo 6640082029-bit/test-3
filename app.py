@@ -110,7 +110,7 @@ if df_raw is not None:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-   import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
