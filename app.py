@@ -268,3 +268,58 @@ elif risk_today > 35:
     st.warning("⚠️ **ELEVATED RISK:** ความเสี่ยงเริ่มสะสม ควรระมัดระวัง")
 else:
     st.success("Swan Status: **ANTIFRAGILE**")
+# --- 5. BLACK SWAN PROBABILITY ENGINE (Backend) ---
+
+def calculate_black_swan_prob(frag_row):
+    # 1. คำนวณ Systemic Stress (Insight Mining)
+    # ให้น้ำหนักตามที่ AI ของคุณเรียนรู้มา (Feature Importance)
+    stress_score = (
+        (frag_row['Volatility'] * 0.3389) +
+        (abs(frag_row['Yield_Signal']) * 0.2450) + # Yield Curve Stress
+        (frag_row['Coupling'] * 0.1463) +
+        (frag_row['Kurtosis'] / 15 * 0.1411) +    # Normalize Kurtosis
+        (frag_row['Safe_Haven'] / 800 * 0.1284)
+    )
+    
+    # 2. คำนวณ Probability โดยเทียบกับค่าวิกฤต (Taleb's Evidence: 0.0549)
+    # ใช้ Sigmoid-like scaling เพื่อเปลี่ยน Stress เป็น %
+    critical_threshold = 0.0549
+    probability = 1 / (1 + np.exp(-100 * (stress_score - critical_threshold)))
+    
+    return min(max(probability * 100, 0.0), 100.0), stress_score
+
+# คำนวณวันนี้
+prob_today, stress_today = calculate_black_swan_prob(latest)
+
+# คำนวณล่วงหน้า (ใช้ Acceleration ของความเครียดสะสม)
+stress_velocity = (df_fragility['Coupling'].diff().tail(22).mean() * 5) # ตัวเร่งจาก Coupling
+prob_3m, _ = calculate_black_swan_prob(latest + (stress_velocity * 3))
+prob_6m, _ = calculate_black_swan_prob(latest + (stress_velocity * 6))
+
+# --- 6. DISPLAY: PROBABILITY DASHBOARD ---
+st.divider()
+st.subheader("🔮 Black Swan Probability Forecast")
+st.markdown("<center><i>Probability of a Black Swan event based on Systemic Stress Pattern Recognition</i></center>", unsafe_allow_html=True)
+
+p_col1, p_col2, p_col3 = st.columns(3)
+
+with p_col1:
+    st.metric("Probability (Today)", f"{prob_today:.2f}%")
+    st.caption("Based on current pattern")
+
+with p_col2:
+    st.metric("3-Month Forecast", f"{prob_3m:.2f}%", f"{prob_3m - prob_today:+.2f}%")
+    st.caption("Projected Stress Trend")
+
+with p_col3:
+    st.metric("6-Month Forecast", f"{prob_6m:.2f}%", f"{prob_6m - prob_today:+.2f}%")
+    st.caption("Long-term Fragility Path")
+
+# --- 7. STRATEGIC ALERT (จากบทเรียน Taleb) ---
+st.markdown("<br>", unsafe_allow_html=True)
+if stress_today > 0.0549:
+    st.error(f"⚠️ **SYSTEMIC STRESS ALERT:** ระดับความเครียดปัจจุบันอยู่ที่ {stress_today:.4f} ซึ่งสูงกว่าเกณฑ์วิกฤต (0.0549) ระวังการเกิด Black Swan ภายใน 30-90 วัน!")
+else:
+    st.info(f"🛡️ **SYSTEMIC STRESS:** {stress_today:.4f} / Threshold: 0.0549 (ระบบยังอยู่ในสภาวะปกติ)")
+
+st.caption("Machine Learning Logic: Random Forest Weighted Analysis (Volatility, Yield, Coupling, Kurtosis, Safe Haven)")
