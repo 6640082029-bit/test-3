@@ -290,3 +290,114 @@ with col_right:
 
 st.divider()
 st.caption("Data source: Yahoo Finance | Framework: Antifragile Quantitative Risk Model")
+
+
+##Section 3 : Simulation
+import streamlit as st
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+
+# --- 1. CONFIG & ANIMATION CSS ---
+st.set_page_config(page_title="Black Swan Sandbox", layout="wide")
+
+# CSS สำหรับลูกเล่น "หน้าจอสั่น" และเปลี่ยนสีพื้นหลังตามความเสี่ยง
+def local_css(prob):
+    bg_color = "#F8FAFC"
+    shake_class = ""
+    if prob < 5: bg_color = "#ECFDF5" # Green
+    elif prob < 15: 
+        bg_color = "#FFF7ED" # Orange
+        shake_class = "shake"
+    else: bg_color = "#450A0A" # Dark Red
+    
+    st.markdown(f"""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;600&display=swap');
+        html, body, [data-testid="stAppViewContainer"] {{
+            background-color: {bg_color} !important;
+            transition: background-color 0.5s ease;
+            font-family: 'Anuphan', sans-serif;
+        }}
+        .shake {{ animation: shake 0.5s; animation-iteration-count: infinite; }}
+        @keyframes shake {{
+            0% {{ transform: translate(1px, 1px) rotate(0deg); }}
+            10% {{ transform: translate(-1px, -2px) rotate(-1deg); }}
+            20% {{ transform: translate(-3px, 0px) rotate(1deg); }}
+            100% {{ transform: translate(1px, -2px) rotate(-1deg); }}
+        }}
+        .duck-container {{ text-align: center; font-size: 100px; padding: 20px; }}
+        </style>
+        """, unsafe_allow_html=True)
+    return shake_class
+
+# --- 2. CORE ENGINES ---
+def estimate_black_swan_mc(stress, horizon_days=30, simulations=50000):
+    baseline_daily_prob = 1 / 5000
+    threshold = 0.0549
+    risk_factor = np.power(stress / threshold, 1.15) if stress > threshold else stress / threshold
+    draws = np.random.random((simulations, horizon_days))
+    return (np.any(draws < (baseline_daily_prob * risk_factor), axis=1).sum() / simulations) * 100
+
+# --- 3. UI: SIDEBAR SIMULATION ---
+with st.sidebar:
+    st.header("🎮 Scenario Sandbox")
+    st.write("ลองปรับปัจจัยเสี่ยงเพื่อดูการตอบสนอง")
+    
+    s_vol = st.slider("Volatility (VIX)", 0.05, 0.8, 0.2)
+    s_yield = st.slider("Yield Spread (10Y-2Y)", -2.0, 2.0, 0.5)
+    s_coupling = st.slider("Market Coupling", 0.1, 0.95, 0.4)
+    s_kurt = st.slider("Kurtosis (Fat-Tail)", 0.0, 20.0, 3.0)
+    s_gold = st.slider("Gold/Copper Ratio", 300.0, 800.0, 450.0)
+    
+    st.divider()
+    # ตัวแปรเซอร์ไพรส์!
+    butterfly = st.checkbox("🦋 Activate Butterfly Effect", help="สุ่มเหตุการณ์ไม่คาดคิดที่อาจขยายความเสี่ยงเชิงระบบ")
+    chaos_mult = np.random.uniform(1.2, 2.5) if butterfly else 1.0
+
+# --- 4. CALCULATION ---
+# สูตรคำนวณ Stress (อิงจาก Weights ที่เราคุยกัน)
+sim_stress = (s_vol * 0.3389 + abs(s_yield/100) * 0.2450 + s_coupling * 0.1463 + (s_kurt/15) * 0.1411) * chaos_mult
+
+p_today = estimate_black_swan_mc(sim_stress)
+p_3m = estimate_black_swan_mc(sim_stress + (0.015 * 3 * 0.85))
+p_6m = estimate_black_swan_mc(sim_stress + (0.015 * 6 * 0.70))
+
+shake_class = local_css(p_today)
+
+# --- 5. MAIN DISPLAY ---
+st.markdown(f'<div class="main-title">🦢 Black Swan War Room</div>', unsafe_allow_html=True)
+
+col_left, col_right = st.columns([1, 1])
+
+with col_left:
+    # ส่วนแสดง Visual Ducks (ในที่นี้ใช้ Emoji เป็น Placeholder ก่อน คุณสามารถเปลี่ยนเป็น st.image(url_gif) ได้)
+    st.markdown(f'<div class="duck-container {shake_class}">', unsafe_allow_html=True)
+    if p_today < 5:
+        st.write("🦆") # เปลี่ยนเป็น Link GIF เป็ดว่ายน้ำชิลล์ๆ
+        st.markdown("<h3 style='text-align:center; color:#065F46;'>Zone A: เป็ดน้อยหลับปุ๋ย</h3>", unsafe_allow_html=True)
+    elif p_today < 15:
+        st.write("🐥") # เปลี่ยนเป็น Link GIF เป็ดใส่ห่วงยางเหงื่อตก
+        st.markdown("<h3 style='text-align:center; color:#9A3412;'>Zone B: เป็ดเริ่มใส่ชูชีพ!</h3>", unsafe_allow_html=True)
+    else:
+        st.write("🦢") # เปลี่ยนเป็น Link GIF ห่านดำตาแดงจอแตก
+        st.markdown("<h3 style='text-align:center; color:#FEF2F2;'>ZONE C: THE BLACK SWAN RAGE!</h3>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col_right:
+    st.subheader("🔮 Simulation Probability")
+    if butterfly: st.warning(f"⚠️ Butterfly Effect Active (Chaos x{chaos_mult:.2f})")
+    
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Today", f"{p_today:.2f}%")
+    m2.metric("3M Forward", f"{p_3m:.2f}%", f"{p_3m-p_today:+.2f}%")
+    m3.metric("6M Forward", f"{p_6m:.2f}%", f"{p_6m-p_today:+.2f}%")
+
+    # กราฟ Projection
+    fig = go.Figure(go.Scatter(x=["Today", "3M", "6M"], y=[p_today, p_3m, p_6m], 
+                               fill='tozeroy', line=dict(color='black', width=4)))
+    fig.update_layout(height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+    st.plotly_chart(fig, use_container_width=True)
+
+if p_today > 15:
+    st.error("🔥 วิกฤตการณ์ระดับรุนแรง: ระบบกำลังเข้าสู่สภาวะล่มสลายเชิงสถิติ!")
